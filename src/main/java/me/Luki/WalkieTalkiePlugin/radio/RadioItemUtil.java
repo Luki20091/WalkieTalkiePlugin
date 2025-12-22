@@ -30,10 +30,9 @@ public final class RadioItemUtil {
         if (itemsAdder != null && itemsAdder.isAvailable() && registry != null) {
             String id = itemsAdder.getCustomId(itemStack);
             if (id != null && !id.isBlank()) {
-                for (RadioDefinition def : registry.all().values()) {
-                    if (def.itemsAdderId() != null && !def.itemsAdderId().isBlank() && def.itemsAdderId().equalsIgnoreCase(id)) {
-                        return def.channel();
-                    }
+                RadioChannel byId = registry.getChannelByItemsAdderId(id);
+                if (byId != null) {
+                    return byId;
                 }
             }
         }

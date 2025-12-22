@@ -9,13 +9,15 @@
 svc:
   enabled: true
   logHook: true
+  # If true, radio/proximity override will only apply within the same world.
+  sameWorldOnly: true
   # MicrophonePacketEvent priority used when registering to SVC (higher runs later).
   microphoneEventPriority: 100
   # Radio will be delivered ONLY if receiver is at least this far from the sender.
   # If receiver is closer (and is allowed to hear), we don't send radio to avoid overlap;
   # SVC proximity voice can handle it.
   # Set to 0 to always deliver radio.
-  radioMinDistanceBlocks: 20.0
+  radioMinDistanceBlocks: 40.0
 
 # ItemsAdder IDs (uzupełnimy później). Przykład formatu: "namespace:item_name"
 # Uwaga: radio-itemy będą bazować na "disc fragment".
@@ -30,13 +32,47 @@ radios:
 # Feedback sound when starting/stopping radio transmit
 sounds:
   start:
+    enabled: true
     sound: "BLOCK_NOTE_BLOCK_PLING"
     volume: 1.0
     pitch: 1.15
   stop:
+    enabled: true
     sound: "BLOCK_NOTE_BLOCK_BASS"
     volume: 1.0
     pitch: 0.85
+  # Played once when switching to a radio / between radios in hotbar
+  switch:
+    enabled: true
+    sound: "BLOCK_NOTE_BLOCK_PLING"
+    volume: 0.8
+    pitch: 1.0
+
+  # Subtle loop/pulse for a "radio filter" feeling while transmitting (PTT active)
+  # This plays locally to the sender only.
+  filterLoop:
+    enabled: true
+    # Mode:
+    # - ALWAYS: play while holding a transmit-capable radio
+    # - PTT: play only shortly after mic packets (while actively speaking)
+    mode: "ALWAYS"
+    # How long after last mic packet we still consider the player "actively transmitting"
+    activeForMs: 350
+    # How often to play the pulse (ticks)
+    everyTicks: 10
+    sound: "BLOCK_NOTE_BLOCK_HAT"
+    volume: 0.15
+    pitch: 1.8
+
+commands:
+  messages:
+    prefix: "&8[&bWT&8]&r "
+    noPermission: "&cBrak permisji."
+    reloaded: "&aPrzeładowano konfigurację."
+    info:
+      - "&bWalkieTalkiePlugin &7v{version}"
+      - "&7SVC: &f{svcEnabled} &7worldOnly: &f{sameWorldOnly}"
+      - "&7radioMinDistance: &f{radioMinDistance}"
 
 # ActionBar notifications (all optional)
 notifications:
@@ -65,4 +101,4 @@ hints:
     checkEveryTicks: 20
     # Minimalny odstęp między ponownym pokazaniem (ticki)
     cooldownTicks: 100
-    actionBar: "&eWciśnij PTT jak na Voice Chat"
+    actionBar: "&eUżyj Voice Chat`u aby nadawać radiem"

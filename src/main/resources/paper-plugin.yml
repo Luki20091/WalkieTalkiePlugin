@@ -7,3 +7,17 @@ depend: [ voicechat ]
 softdepend: [ ItemsAdder, ProtocolLib ]
 authors: [ Luki & StreamCraft ]
 description: Walkie Talkie Plugin for StreamCraft 3, Simple Voice Chat extension
+
+commands:
+	walkietalkie:
+		description: WalkieTalkiePlugin main command
+		usage: /<command> <reload|info>
+		aliases: [ wt ]
+
+permissions:
+	walkietalkie.reload:
+		description: Allows reloading WalkieTalkiePlugin config
+		default: op
+	walkietalkie.info:
+		description: Allows viewing WalkieTalkiePlugin info
+		default: true

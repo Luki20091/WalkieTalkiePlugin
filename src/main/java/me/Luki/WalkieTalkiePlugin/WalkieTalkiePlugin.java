@@ -9,6 +9,7 @@ import me.Luki.WalkieTalkiePlugin.radio.RadioRegistry;
 import me.Luki.WalkieTalkiePlugin.radio.RadioState;
 import me.Luki.WalkieTalkiePlugin.recipes.RecipeRegistrar;
 import me.Luki.WalkieTalkiePlugin.voice.VoicechatBridge;
+import me.Luki.WalkieTalkiePlugin.commands.WalkieTalkieCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import org.bukkit.NamespacedKey;
@@ -21,6 +22,7 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import java.util.Map;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.lang.reflect.Field;
 import java.util.concurrent.ConcurrentHashMap;
@@ -35,9 +37,16 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     private final Map<UUID, Long> lastMicPacketAtMs = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastPttHintAtMs = new ConcurrentHashMap<>();
-    private BukkitRunnable pttHintTask;
+    private BukkitRunnable radioUiTask;
+
+    private volatile VoicechatBridge voicechatBridge;
 
     private static final Map<String, Sound> SOUND_LOOKUP = new ConcurrentHashMap<>();
+
+    private final Map<UUID, RadioChannel> transmitChannelByPlayer = new ConcurrentHashMap<>();
+    private final Set<UUID> pttHintCandidates = ConcurrentHashMap.newKeySet();
+
+    private final Map<UUID, PermissionSnapshot> permissionSnapshots = new ConcurrentHashMap<>();
 
     private final LegacyComponentSerializer legacy = LegacyComponentSerializer.legacySection();
 
@@ -53,6 +62,13 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(new RadioListeners(this, itemUtil), this);
 
+        // Populate caches for already-online players (e.g. plugin reload while players are online)
+        getServer().getOnlinePlayers().forEach(p -> {
+            radioState.refreshHotbar(p);
+            refreshTransmitCache(p);
+            refreshPermissionCache(p);
+        });
+
         // Register crafting recipes + permissions
         RecipeRegistrar registrar = new RecipeRegistrar(this, radioRegistry, itemsAdder, channelKey(base));
         var recipes = registrar.registerAll();
@@ -63,7 +79,14 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         VoicechatBridge.tryRegister(this);
 
-        startPttHintTask();
+        startRadioUiTask();
+
+        var command = getCommand("walkietalkie");
+        if (command != null) {
+            WalkieTalkieCommand executor = new WalkieTalkieCommand(this);
+            command.setExecutor(executor);
+            command.setTabCompleter(executor);
+        }
 
     }
 
@@ -75,12 +98,121 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             getServer().getOnlinePlayers().forEach(p -> radioState.clear(p.getUniqueId()));
         }
 
-        if (pttHintTask != null) {
-            pttHintTask.cancel();
-            pttHintTask = null;
+        if (radioUiTask != null) {
+            radioUiTask.cancel();
+            radioUiTask = null;
         }
+
         lastMicPacketAtMs.clear();
         lastPttHintAtMs.clear();
+        transmitChannelByPlayer.clear();
+        pttHintCandidates.clear();
+        permissionSnapshots.clear();
+    }
+
+    public void setVoicechatBridge(VoicechatBridge bridge) {
+        this.voicechatBridge = bridge;
+    }
+
+    public VoicechatBridge getVoicechatBridge() {
+        return voicechatBridge;
+    }
+
+    public void reloadPlugin() {
+        reloadConfig();
+
+        if (radioRegistry != null) {
+            radioRegistry.reload(getConfig().getConfigurationSection("radios"));
+        }
+
+        VoicechatBridge bridge = voicechatBridge;
+        if (bridge != null) {
+            bridge.reloadFromConfig();
+        }
+
+        // restart task to apply config changes
+        if (radioUiTask != null) {
+            radioUiTask.cancel();
+            radioUiTask = null;
+        }
+        startRadioUiTask();
+
+        // Refresh caches for online players
+        getServer().getOnlinePlayers().forEach(p -> {
+            if (radioState != null) {
+                radioState.refreshHotbar(p);
+            }
+            refreshTransmitCache(p);
+            refreshPermissionCache(p);
+        });
+    }
+
+    public RadioChannel getTransmitChannelCached(UUID playerUuid) {
+        if (playerUuid == null) {
+            return null;
+        }
+        return transmitChannelByPlayer.get(playerUuid);
+    }
+
+    public boolean canListenCached(UUID receiverUuid, RadioChannel transmitting) {
+        if (receiverUuid == null || transmitting == null) {
+            return false;
+        }
+
+        PermissionSnapshot snapshot = permissionSnapshots.get(receiverUuid);
+        if (snapshot == null) {
+            return false;
+        }
+
+        // Pirate eavesdrop: receiver listens to a random chosen channel while holding pirate radio.
+        RadioChannel eavesdropTarget = radioState != null ? radioState.getEavesdroppingChannel(receiverUuid) : null;
+        if (eavesdropTarget != null && eavesdropTarget == transmitting) {
+            return snapshot.hasPirateRandomUse;
+        }
+
+        if (!snapshot.hasListenPermission(transmitting)) {
+            return false;
+        }
+        return radioState != null && radioState.hasHotbarRadio(receiverUuid, transmitting);
+    }
+
+    public void refreshPermissionCache(Player player) {
+        if (player == null) {
+            return;
+        }
+
+        int listenMask = 0;
+        for (RadioChannel c : RadioChannel.values()) {
+            if (player.hasPermission(c.listenPermission())) {
+                listenMask |= (1 << c.ordinal());
+            }
+        }
+        boolean pirateRandomUse = player.hasPermission(RadioChannel.PIRACI_RANDOM.usePermission());
+        permissionSnapshots.put(player.getUniqueId(), new PermissionSnapshot(listenMask, pirateRandomUse));
+    }
+
+    public void clearPermissionCache(UUID playerUuid) {
+        if (playerUuid == null) {
+            return;
+        }
+        permissionSnapshots.remove(playerUuid);
+    }
+
+    public static final class PermissionSnapshot {
+        private final int listenMask;
+        public final boolean hasPirateRandomUse;
+
+        private PermissionSnapshot(int listenMask, boolean hasPirateRandomUse) {
+            this.listenMask = listenMask;
+            this.hasPirateRandomUse = hasPirateRandomUse;
+        }
+
+        public boolean hasListenPermission(RadioChannel channel) {
+            if (channel == null) {
+                return false;
+            }
+            return (listenMask & (1 << channel.ordinal())) != 0;
+        }
     }
 
     public void recordMicPacket(UUID senderUuid) {
@@ -90,56 +222,94 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         lastMicPacketAtMs.put(senderUuid, System.currentTimeMillis());
     }
 
-    private void startPttHintTask() {
-        boolean enabled = getConfig().getBoolean("hints.pttRequired.enabled", true);
+    private void startRadioUiTask() {
         boolean svcEnabled = getConfig().getBoolean("svc.enabled", true);
-        if (!enabled || !svcEnabled) {
+        if (!svcEnabled) {
             return;
         }
 
-        int checkEveryTicks = Math.max(1, getConfig().getInt("hints.pttRequired.checkEveryTicks", 10));
-        long afterMs = Math.max(0L, getConfig().getLong("hints.pttRequired.afterMs", 750L));
-        int cooldownTicks = Math.max(0, getConfig().getInt("hints.pttRequired.cooldownTicks", 40));
-        long cooldownMs = cooldownTicks * 50L;
+        boolean hintEnabled = getConfig().getBoolean("hints.pttRequired.enabled", true);
+        int hintCheckEveryTicks = Math.max(1, getConfig().getInt("hints.pttRequired.checkEveryTicks", 10));
+        long hintAfterMs = Math.max(0L, getConfig().getLong("hints.pttRequired.afterMs", 750L));
+        int hintCooldownTicks = Math.max(0, getConfig().getInt("hints.pttRequired.cooldownTicks", 40));
+        long hintCooldownMs = hintCooldownTicks * 50L;
 
-        pttHintTask = new BukkitRunnable() {
+        boolean filterEnabled = getConfig().getBoolean("sounds.filterLoop.enabled", true);
+        int filterEveryTicks = Math.max(1, getConfig().getInt("sounds.filterLoop.everyTicks", 10));
+        long filterActiveForMs = Math.max(0L, getConfig().getLong("sounds.filterLoop.activeForMs", 350L));
+        String modeRaw = String.valueOf(getConfig().getString("sounds.filterLoop.mode", "ALWAYS"));
+        String mode = modeRaw.trim().toUpperCase(Locale.ROOT);
+        boolean filterPttOnly = mode.equals("PTT");
+
+        if (!hintEnabled && !filterEnabled) {
+            return;
+        }
+
+        int periodTicks;
+        if (hintEnabled && filterEnabled) {
+            periodTicks = Math.min(hintCheckEveryTicks, filterEveryTicks);
+        } else if (hintEnabled) {
+            periodTicks = hintCheckEveryTicks;
+        } else {
+            periodTicks = filterEveryTicks;
+        }
+
+        radioUiTask = new BukkitRunnable() {
+            private int elapsedTicks = 0;
+
             @Override
             public void run() {
-                // If SVC isn't present, hint is misleading.
+                // If SVC isn't present, UI effects are misleading.
                 if (getServer().getPluginManager().getPlugin("voicechat") == null) {
                     return;
                 }
 
+                elapsedTicks += periodTicks;
+                boolean doHint = hintEnabled && (elapsedTicks % hintCheckEveryTicks == 0);
+                boolean doFilter = filterEnabled && (elapsedTicks % filterEveryTicks == 0);
+                if (!doHint && !doFilter) {
+                    return;
+                }
+
                 long now = System.currentTimeMillis();
-                for (Player player : getServer().getOnlinePlayers()) {
-                    UUID uuid = player.getUniqueId();
-                    if (radioState == null || itemUtil == null) {
+                var iterator = pttHintCandidates.iterator();
+                while (iterator.hasNext()) {
+                    UUID uuid = iterator.next();
+                    Player player = getServer().getPlayer(uuid);
+                    if (player == null) {
+                        iterator.remove();
                         continue;
                     }
 
-                    // Only when holding a transmit radio in main hand
-                    RadioChannel channel = getTransmitChannel(player);
+                    RadioChannel channel = transmitChannelByPlayer.get(uuid);
                     if (channel == null) {
+                        iterator.remove();
                         continue;
                     }
 
                     long lastMic = lastMicPacketAtMs.getOrDefault(uuid, 0L);
-                    if (now - lastMic < afterMs) {
-                        continue;
+
+                    if (doHint) {
+                        if (now - lastMic >= hintAfterMs) {
+                            long lastHint = lastPttHintAtMs.getOrDefault(uuid, 0L);
+                            if (hintCooldownMs <= 0 || now - lastHint >= hintCooldownMs) {
+                                playConfiguredNotification(player, "hints.pttRequired");
+                                lastPttHintAtMs.put(uuid, now);
+                            }
+                        }
                     }
 
-                    long lastHint = lastPttHintAtMs.getOrDefault(uuid, 0L);
-                    if (cooldownMs > 0 && now - lastHint < cooldownMs) {
-                        continue;
+                    if (doFilter) {
+                        if (!filterPttOnly || filterActiveForMs <= 0 || now - lastMic <= filterActiveForMs) {
+                            // Local-only pulse that gives a subtle "radio filter" feel.
+                            playFeedbackSound(player, "sounds.filterLoop");
+                        }
                     }
-
-                    playConfiguredNotification(player, "hints.pttRequired");
-                    lastPttHintAtMs.put(uuid, now);
                 }
             }
         };
 
-        pttHintTask.runTaskTimer(this, checkEveryTicks, checkEveryTicks);
+        radioUiTask.runTaskTimer(this, periodTicks, periodTicks);
     }
 
     public RadioState getRadioState() {
@@ -155,21 +325,52 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     }
 
     public RadioChannel getTransmitChannel(Player player) {
+        return getTransmitChannelFast(player);
+    }
+
+    public RadioChannel getTransmitChannelFast(Player player) {
         if (player == null || itemUtil == null) {
             return null;
         }
+
+        UUID uuid = player.getUniqueId();
+        RadioChannel cached = transmitChannelByPlayer.get(uuid);
+        if (cached != null) {
+            // Permission could change at runtime; keep this cheap correctness check.
+            if (player.hasPermission(cached.usePermission())) {
+                return cached;
+            }
+            transmitChannelByPlayer.remove(uuid);
+            pttHintCandidates.remove(uuid);
+        }
+
+        refreshTransmitCache(player);
+        return transmitChannelByPlayer.get(uuid);
+    }
+
+    public void refreshTransmitCache(Player player) {
+        if (player == null || itemUtil == null) {
+            return;
+        }
+
+        UUID uuid = player.getUniqueId();
         RadioChannel channel = itemUtil.getChannel(player.getInventory().getItemInMainHand());
-        if (channel == null) {
-            return null;
+        if (channel == null || channel == RadioChannel.PIRACI_RANDOM || !player.hasPermission(channel.usePermission())) {
+            transmitChannelByPlayer.remove(uuid);
+            pttHintCandidates.remove(uuid);
+            return;
         }
-        // Pirate random radio is eavesdrop-only
-        if (channel == RadioChannel.PIRACI_RANDOM) {
-            return null;
+
+        transmitChannelByPlayer.put(uuid, channel);
+        pttHintCandidates.add(uuid);
+    }
+
+    public void clearTransmitCache(UUID uuid) {
+        if (uuid == null) {
+            return;
         }
-        if (!player.hasPermission(channel.usePermission())) {
-            return null;
-        }
-        return channel;
+        transmitChannelByPlayer.remove(uuid);
+        pttHintCandidates.remove(uuid);
     }
 
     public void runNextTick(Runnable runnable) {
@@ -182,6 +383,10 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     }
 
     public void playFeedbackSound(Player player, String path) {
+        boolean enabled = getConfig().getBoolean(path + ".enabled", true);
+        if (!enabled) {
+            return;
+        }
         String soundName = getConfig().getString(path + ".sound", "");
         float volume = (float) getConfig().getDouble(path + ".volume", 1.0);
         float pitch = (float) getConfig().getDouble(path + ".pitch", 1.0);

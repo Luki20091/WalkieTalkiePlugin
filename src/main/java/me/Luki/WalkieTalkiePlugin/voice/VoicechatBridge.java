@@ -1,6 +1,9 @@
 package me.Luki.WalkieTalkiePlugin.voice;
 
 import de.maxhenkel.voicechat.api.BukkitVoicechatService;
+import de.maxhenkel.voicechat.api.Position;
+import de.maxhenkel.voicechat.api.ServerLevel;
+import de.maxhenkel.voicechat.api.ServerPlayer;
 import de.maxhenkel.voicechat.api.VoicechatConnection;
 import de.maxhenkel.voicechat.api.VoicechatPlugin;
 import de.maxhenkel.voicechat.api.VoicechatServerApi;
@@ -12,7 +15,6 @@ import de.maxhenkel.voicechat.api.packets.StaticSoundPacket;
 import me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin;
 import me.Luki.WalkieTalkiePlugin.radio.RadioChannel;
 import org.bukkit.Bukkit;
-import org.bukkit.entity.Player;
 import java.util.UUID;
 
 public final class VoicechatBridge implements VoicechatPlugin {
@@ -21,16 +23,22 @@ public final class VoicechatBridge implements VoicechatPlugin {
     private volatile VoicechatServerApi serverApi;
 
     private final int microphoneEventPriority;
-    private final boolean logHook;
-    private final double radioMinDistanceBlocks;
+    private volatile boolean logHook;
+    private volatile double radioMinDistanceBlocks;
+    private volatile boolean sameWorldOnly;
 
     public VoicechatBridge(WalkieTalkiePlugin plugin) {
         this.plugin = plugin;
 
         this.microphoneEventPriority = plugin.getConfig().getInt("svc.microphoneEventPriority", 100);
+        reloadFromConfig();
+    }
+
+    public void reloadFromConfig() {
         this.logHook = plugin.getConfig().getBoolean("svc.logHook", true);
         double minDistance = plugin.getConfig().getDouble("svc.radioMinDistanceBlocks", 20.0);
         this.radioMinDistanceBlocks = Math.max(0.0, minDistance);
+        this.sameWorldOnly = plugin.getConfig().getBoolean("svc.sameWorldOnly", true);
     }
 
     public static void tryRegister(WalkieTalkiePlugin plugin) {
@@ -44,7 +52,9 @@ public final class VoicechatBridge implements VoicechatPlugin {
             plugin.getLogger().warning("Simple Voice Chat service not found. Voice features disabled.");
             return;
         }
-        service.registerPlugin(new VoicechatBridge(plugin));
+        VoicechatBridge bridge = new VoicechatBridge(plugin);
+        plugin.setVoicechatBridge(bridge);
+        service.registerPlugin(bridge);
     }
 
     @Override
@@ -72,13 +82,24 @@ public final class VoicechatBridge implements VoicechatPlugin {
             return;
         }
 
-        UUID senderUuid = event.getSenderConnection().getPlayer().getUuid();
-        Player sender = Bukkit.getPlayer(senderUuid);
-        if (sender == null) {
+        VoicechatConnection senderConnection = event.getSenderConnection();
+        if (senderConnection == null) {
             return;
         }
 
-        RadioChannel transmitting = plugin.getTransmitChannel(sender);
+        ServerPlayer senderPlayer = senderConnection.getPlayer();
+        if (senderPlayer == null) {
+            return;
+        }
+
+        UUID senderUuid = senderPlayer.getUuid();
+        if (senderUuid == null) {
+            return;
+        }
+
+        // IMPORTANT: This event may be executed off the main server thread.
+        // Do not touch Bukkit API here. Use cached state only.
+        RadioChannel transmitting = plugin.getTransmitChannelCached(senderUuid);
         if (transmitting == null) {
             return; // normal behavior
         }
@@ -97,28 +118,49 @@ public final class VoicechatBridge implements VoicechatPlugin {
             return;
         }
 
-        UUID receiverUuid = receiverConnection.getPlayer().getUuid();
+        ServerPlayer receiverPlayer = receiverConnection.getPlayer();
+        if (receiverPlayer == null) {
+            // Fail closed: while on radio, don't leak proximity.
+            event.cancel();
+            return;
+        }
+
+        UUID receiverUuid = receiverPlayer.getUuid();
         if (receiverUuid == null || receiverUuid.equals(senderUuid)) {
             // If we can't resolve receiver, safest is to prevent leaking proximity during radio mode.
             event.cancel();
             return;
         }
 
-        Player receiver = Bukkit.getPlayer(receiverUuid);
-        if (receiver == null) {
-            event.cancel();
-            return;
+        if (sameWorldOnly) {
+            ServerLevel senderLevel = senderPlayer.getServerLevel();
+            ServerLevel receiverLevel = receiverPlayer.getServerLevel();
+            Object senderWorld = senderLevel != null ? senderLevel.getServerLevel() : null;
+            Object receiverWorld = receiverLevel != null ? receiverLevel.getServerLevel() : null;
+            if (senderWorld == null || receiverWorld == null || senderWorld != receiverWorld) {
+                event.cancel();
+                return;
+            }
         }
 
-        boolean allowedToHear = isAllowedToHear(receiver, transmitting);
-        if (!allowedToHear) {
+        if (!plugin.canListenCached(receiverUuid, transmitting)) {
             event.cancel();
             return;
         }
 
         // If receiver is closer than threshold, keep proximity voice (avoid overlap)
-        if (radioMinDistanceBlocks > 0.0 && isWithinDistance(sender, receiver, radioMinDistanceBlocks)) {
-            return;
+        if (radioMinDistanceBlocks > 0.0) {
+            Position senderPos = senderPlayer.getPosition();
+            Position receiverPos = receiverPlayer.getPosition();
+            if (senderPos == null || receiverPos == null) {
+                // Fail closed: while on radio, don't leak proximity.
+                event.cancel();
+                return;
+            }
+
+            if (isWithinDistance(senderPos, receiverPos, radioMinDistanceBlocks)) {
+                return;
+            }
         }
 
         // Far enough: suppress prox and deliver radio direct
@@ -131,28 +173,12 @@ public final class VoicechatBridge implements VoicechatPlugin {
         api.sendStaticSoundPacketTo(receiverConnection, staticPacket);
     }
 
-    private boolean isAllowedToHear(Player receiver, RadioChannel transmitting) {
-        // Pirate eavesdrop: receiver listens to a random chosen channel while holding PPM with pirate radio.
-        RadioChannel eavesdropTarget = plugin.getRadioState().getEavesdroppingChannel(receiver.getUniqueId());
-        if (eavesdropTarget != null && eavesdropTarget == transmitting) {
-            return receiver.hasPermission(RadioChannel.PIRACI_RANDOM.usePermission());
-        }
-
-        if (!receiver.hasPermission(transmitting.listenPermission())) {
-            return false;
-        }
-        return plugin.getRadioState().hasHotbarRadio(receiver.getUniqueId(), transmitting);
-    }
-
-    private static boolean isWithinDistance(Player a, Player b, double blocks) {
-        if (a.getWorld() == null || b.getWorld() == null) {
-            return false;
-        }
-        if (!a.getWorld().equals(b.getWorld())) {
-            return false;
-        }
+    private static boolean isWithinDistance(Position a, Position b, double blocks) {
         double maxDistSq = blocks * blocks;
-        return a.getLocation().distanceSquared(b.getLocation()) < maxDistSq;
+        double dx = a.getX() - b.getX();
+        double dy = a.getY() - b.getY();
+        double dz = a.getZ() - b.getZ();
+        return (dx * dx + dy * dy + dz * dz) < maxDistSq;
     }
 
 }

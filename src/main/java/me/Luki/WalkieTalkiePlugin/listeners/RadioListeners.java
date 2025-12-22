@@ -13,14 +13,20 @@ import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
 
 // Paper-only events may be available; we keep them reflective-safe by using PlayerInteractEvent fallback later.
 import org.bukkit.event.player.PlayerKickEvent;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class RadioListeners implements Listener {
 
     private final WalkieTalkiePlugin plugin;
     private final RadioItemUtil itemUtil;
+
+    private final Map<UUID, RadioChannel> lastHeldRadioChannel = new ConcurrentHashMap<>();
 
     public RadioListeners(WalkieTalkiePlugin plugin, RadioItemUtil itemUtil) {
         this.plugin = plugin;
@@ -42,16 +48,31 @@ public final class RadioListeners implements Listener {
         }
 
         plugin.getRadioState().refreshHotbar(player);
+        plugin.refreshTransmitCache(player);
+        plugin.refreshPermissionCache(player);
+
+        RadioChannel inHand = itemUtil.getChannel(player.getInventory().getItemInMainHand());
+        if (inHand != null) {
+            lastHeldRadioChannel.put(player.getUniqueId(), inHand);
+        } else {
+            lastHeldRadioChannel.remove(player.getUniqueId());
+        }
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         plugin.getRadioState().clear(event.getPlayer().getUniqueId());
+        plugin.clearTransmitCache(event.getPlayer().getUniqueId());
+        plugin.clearPermissionCache(event.getPlayer().getUniqueId());
+        lastHeldRadioChannel.remove(event.getPlayer().getUniqueId());
     }
 
     @EventHandler
     public void onKick(PlayerKickEvent event) {
         plugin.getRadioState().clear(event.getPlayer().getUniqueId());
+        plugin.clearTransmitCache(event.getPlayer().getUniqueId());
+        plugin.clearPermissionCache(event.getPlayer().getUniqueId());
+        lastHeldRadioChannel.remove(event.getPlayer().getUniqueId());
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
@@ -79,7 +100,11 @@ public final class RadioListeners implements Listener {
         }
 
         // Any inventory change: refresh cached hotbar next tick
-        plugin.runNextTick(() -> plugin.getRadioState().refreshHotbar(player));
+        plugin.runNextTick(() -> {
+            plugin.getRadioState().refreshHotbar(player);
+            plugin.refreshTransmitCache(player);
+            plugin.refreshPermissionCache(player);
+        });
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
@@ -94,7 +119,21 @@ public final class RadioListeners implements Listener {
             return;
         }
 
-        plugin.runNextTick(() -> plugin.getRadioState().refreshHotbar(player));
+        plugin.runNextTick(() -> {
+            plugin.getRadioState().refreshHotbar(player);
+            plugin.refreshTransmitCache(player);
+            plugin.refreshPermissionCache(player);
+        });
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
+    public void onDrop(PlayerDropItemEvent event) {
+        Player player = event.getPlayer();
+        plugin.runNextTick(() -> {
+            plugin.getRadioState().refreshHotbar(player);
+            plugin.refreshTransmitCache(player);
+            plugin.refreshPermissionCache(player);
+        });
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
@@ -102,6 +141,27 @@ public final class RadioListeners implements Listener {
         Player player = event.getPlayer();
         plugin.runNextTick(() -> {
             plugin.getRadioState().refreshHotbar(player);
+            plugin.refreshTransmitCache(player);
+            plugin.refreshPermissionCache(player);
+
+            // Play a single click sound when switching to a radio / between radio channels.
+            RadioChannel nowInHand = itemUtil.getChannel(player.getInventory().getItemInMainHand());
+            UUID uuid = player.getUniqueId();
+            RadioChannel previously = lastHeldRadioChannel.get(uuid);
+            if (nowInHand != previously) {
+                if (nowInHand != null) {
+                    String switchSound = plugin.getConfig().getString("sounds.switch.sound", "");
+                    if (switchSound != null && !switchSound.isBlank()) {
+                        plugin.playFeedbackSound(player, "sounds.switch");
+                    } else {
+                        // Backwards-compatible fallback for existing configs.
+                        plugin.playFeedbackSound(player, "sounds.start");
+                    }
+                    lastHeldRadioChannel.put(uuid, nowInHand);
+                } else {
+                    lastHeldRadioChannel.remove(uuid);
+                }
+            }
 
             // Pirate eavesdrop activation: hold PIRACI_RANDOM radio in main hand.
             boolean wasEavesdropping = plugin.getRadioState().getEavesdroppingChannel(player.getUniqueId()) != null;

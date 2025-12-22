@@ -2,6 +2,8 @@ package me.Luki.WalkieTalkiePlugin.radio;
 
 import org.bukkit.entity.Player;
 
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.Set;
@@ -60,14 +62,15 @@ public final class RadioState {
     }
 
     public void refreshHotbar(Player player) {
-        Set<RadioChannel> channels = ConcurrentHashMap.newKeySet();
+        EnumSet<RadioChannel> channels = EnumSet.noneOf(RadioChannel.class);
         for (int slot = 0; slot < 9; slot++) {
             RadioChannel channel = itemUtil.getChannel(player.getInventory().getItem(slot));
             if (channel != null) {
                 channels.add(channel);
             }
         }
-        hotbarCache.put(player.getUniqueId(), channels);
+        // Store as an immutable set to avoid accidental mutation across threads.
+        hotbarCache.put(player.getUniqueId(), Collections.unmodifiableSet(channels));
     }
 
     public boolean hasHotbarRadio(UUID playerUuid, RadioChannel channel) {
