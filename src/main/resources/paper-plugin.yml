@@ -1,0 +1,7 @@
+name: WalkieTalkiePlugin
+version: '1.0-Alpha'
+main: me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin
+api-version: '1.21'
+load: STARTUP
+authors: [ Luki & StreamCraft ]
+description: Walkie Talkie Plugin for StreamCraft 3, Simple Voice Chat extension
