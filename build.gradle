@@ -12,10 +12,20 @@ repositories {
         name = "papermc-repo"
         url = "https://repo.papermc.io/repository/maven-public/"
     }
+    maven {
+        name = "maxhenkel"
+        url = "https://maven.maxhenkel.de/repository/public"
+    }
+    maven {
+        name = "dmulloy2-repo"
+        url = "https://repo.dmulloy2.net/repository/public/"
+    }
 }
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
+    compileOnly("de.maxhenkel.voicechat:voicechat-api:2.6.0")
+    compileOnly("com.comphenix.protocol:ProtocolLib:5.3.0")
 }
 
 tasks {
@@ -23,7 +33,7 @@ tasks {
         // Configure the Minecraft version for our task.
         // This is the only required configuration besides applying the plugin.
         // Your plugin's jar (or shadowJar if present) will be used automatically.
-        minecraftVersion("1.21")
+        minecraftVersion("1.21.8")
     }
 }
 

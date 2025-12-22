@@ -1,0 +1,68 @@
+# WalkieTalkiePlugin configuration
+# Minecraft: 1.21.8
+
+# Nadawanie radiem: trzymaj radio w main hand + użyj PTT w Simple Voice Chat.
+
+# Simple Voice Chat (SVC) integration
+# Uwaga: to nie jest konfiguracja portu Voice Chat (to jest w configu SVC).
+# Tutaj sterujesz tylko integracją pluginu z API SVC.
+svc:
+  enabled: true
+  logHook: true
+  # MicrophonePacketEvent priority used when registering to SVC (higher runs later).
+  microphoneEventPriority: 100
+  # Radio will be delivered ONLY if receiver is at least this far from the sender.
+  # If receiver is closer (and is allowed to hear), we don't send radio to avoid overlap;
+  # SVC proximity voice can handle it.
+  # Set to 0 to always deliver radio.
+  radioMinDistanceBlocks: 20.0
+
+# ItemsAdder IDs (uzupełnimy później). Przykład formatu: "namespace:item_name"
+# Uwaga: radio-itemy będą bazować na "disc fragment".
+radios:
+  czerwoni: ""
+  niebiescy: ""
+  handlarze: ""
+  piraci: ""
+  tohandlarze: ""
+  piraci_random: ""
+
+# Feedback sound when starting/stopping radio transmit
+sounds:
+  start:
+    sound: "BLOCK_NOTE_BLOCK_PLING"
+    volume: 1.0
+    pitch: 1.15
+  stop:
+    sound: "BLOCK_NOTE_BLOCK_BASS"
+    volume: 1.0
+    pitch: 0.85
+
+# ActionBar notifications (all optional)
+notifications:
+  transmit:
+    start:
+      enabled: true
+      actionBar: "&aNadawanie"
+    stop:
+      enabled: true
+      actionBar: "&cKoniec nadawania"
+  eavesdrop:
+    start:
+      enabled: true
+      actionBar: "&5Podsłuch"
+    stop:
+      enabled: true
+      actionBar: "&5Podsłuch wyłączony"
+
+# Hint: pokazuje nadającemu, że musi wcisnąć PTT w Simple Voice Chat
+hints:
+  pttRequired:
+    enabled: true
+    # Jeśli od ostatniego pakietu audio minęło tyle ms, pokaż hint
+    afterMs: 2000
+    # Jak często sprawdzać (ticki)
+    checkEveryTicks: 20
+    # Minimalny odstęp między ponownym pokazaniem (ticki)
+    cooldownTicks: 100
+    actionBar: "&eWciśnij PTT jak na Voice Chat"
