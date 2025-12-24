@@ -15,9 +15,11 @@ import de.maxhenkel.voicechat.api.packets.StaticSoundPacket;
 import me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin;
 import me.Luki.WalkieTalkiePlugin.radio.RadioChannel;
 import org.bukkit.Bukkit;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
-public final class VoicechatBridge implements VoicechatPlugin {
+public final class VoicechatBridge implements VoicechatPlugin, VoiceBridge {
 
     private final WalkieTalkiePlugin plugin;
     private volatile VoicechatServerApi serverApi;
@@ -26,6 +28,11 @@ public final class VoicechatBridge implements VoicechatPlugin {
     private volatile boolean logHook;
     private volatile double radioMinDistanceBlocks;
     private volatile boolean sameWorldOnly;
+
+    // DEV: SVC often doesn't emit a receiver==sender callback, so we do a best-effort loopback.
+    // Rate-limited to avoid sending the loopback multiple times per microphone packet (event is per receiver).
+    private final Map<UUID, Long> lastDevLoopbackAtNs = new ConcurrentHashMap<>();
+    private static final long DEV_LOOPBACK_MIN_INTERVAL_NS = 15_000_000L; // ~15ms
 
     public VoicechatBridge(WalkieTalkiePlugin plugin) {
         this.plugin = plugin;
@@ -39,6 +46,11 @@ public final class VoicechatBridge implements VoicechatPlugin {
         double minDistance = plugin.getConfig().getDouble("svc.radioMinDistanceBlocks", 20.0);
         this.radioMinDistanceBlocks = Math.max(0.0, minDistance);
         this.sameWorldOnly = plugin.getConfig().getBoolean("svc.sameWorldOnly", true);
+    }
+
+    @Override
+    public boolean isHooked() {
+        return serverApi != null;
     }
 
     public static void tryRegister(WalkieTalkiePlugin plugin) {
@@ -77,6 +89,7 @@ public final class VoicechatBridge implements VoicechatPlugin {
     }
 
     private void onMicrophonePacket(MicrophonePacketEvent event) {
+        plugin.debugMicEventCounted();
         VoicechatServerApi api = serverApi;
         if (api == null) {
             return;
@@ -84,11 +97,13 @@ public final class VoicechatBridge implements VoicechatPlugin {
 
         VoicechatConnection senderConnection = event.getSenderConnection();
         if (senderConnection == null) {
+            plugin.debugMicNoSender();
             return;
         }
 
         ServerPlayer senderPlayer = senderConnection.getPlayer();
         if (senderPlayer == null) {
+            plugin.debugMicNoSender();
             return;
         }
 
@@ -101,11 +116,29 @@ public final class VoicechatBridge implements VoicechatPlugin {
         // Do not touch Bukkit API here. Use cached state only.
         RadioChannel transmitting = plugin.getTransmitChannelCached(senderUuid);
         if (transmitting == null) {
+            plugin.debugMicNoTransmitChannel();
             return; // normal behavior
         }
 
         // Sender is holding a radio (and has permission) and we received an audio packet.
         plugin.recordMicPacket(senderUuid);
+
+        // DEV: always allow hearing yourself to verify that transmit detection + routing work.
+        // This doesn't rely on SVC creating a receiver callback for the sender.
+        if (plugin.isDevMode()) {
+            long nowNs = System.nanoTime();
+            Long lastNs = lastDevLoopbackAtNs.get(senderUuid);
+            if (lastNs == null || (nowNs - lastNs) >= DEV_LOOPBACK_MIN_INTERVAL_NS) {
+                lastDevLoopbackAtNs.put(senderUuid, nowNs);
+                MicrophonePacket micPacket = event.getPacket();
+                if (micPacket != null) {
+                    StaticSoundPacket selfPacket = micPacket.staticSoundPacketBuilder()
+                        .channelId(transmitting.voicechatChannelId())
+                        .build();
+                    api.sendStaticSoundPacketTo(senderConnection, selfPacket);
+                }
+            }
+        }
 
         // SVC emits MicrophonePacketEvent per receiver. We can decide per receiver:
         // - close enough: allow proximity voice (do NOT cancel), do NOT send radio
@@ -115,20 +148,40 @@ public final class VoicechatBridge implements VoicechatPlugin {
         VoicechatConnection receiverConnection = event.getReceiverConnection();
         if (receiverConnection == null) {
             // Can't decide per-receiver; fall back to prox.
+            plugin.debugMicNoReceiver();
             return;
         }
 
         ServerPlayer receiverPlayer = receiverConnection.getPlayer();
         if (receiverPlayer == null) {
             // Fail closed: while on radio, don't leak proximity.
+            plugin.debugMicNoReceiver();
             event.cancel();
             return;
         }
 
         UUID receiverUuid = receiverPlayer.getUuid();
-        if (receiverUuid == null || receiverUuid.equals(senderUuid)) {
+        if (receiverUuid == null) {
             // If we can't resolve receiver, safest is to prevent leaking proximity during radio mode.
+            plugin.debugMicNoReceiver();
             event.cancel();
+            return;
+        }
+
+        // DEV: allow hearing yourself to verify that radio routing works.
+        // Some SVC setups include a receiver callback for the sender; if so we can loop back.
+        if (receiverUuid.equals(senderUuid)) {
+            if (!plugin.isDevMode()) {
+                return;
+            }
+
+            event.cancel();
+            MicrophonePacket micPacket = event.getPacket();
+            StaticSoundPacket staticPacket = micPacket.staticSoundPacketBuilder()
+                .channelId(transmitting.voicechatChannelId())
+                .build();
+            api.sendStaticSoundPacketTo(senderConnection, staticPacket);
+            plugin.debugMicRadioSent();
             return;
         }
 
@@ -138,12 +191,14 @@ public final class VoicechatBridge implements VoicechatPlugin {
             Object senderWorld = senderLevel != null ? senderLevel.getServerLevel() : null;
             Object receiverWorld = receiverLevel != null ? receiverLevel.getServerLevel() : null;
             if (senderWorld == null || receiverWorld == null || senderWorld != receiverWorld) {
+                plugin.debugMicCrossWorldCancelled();
                 event.cancel();
                 return;
             }
         }
 
         if (!plugin.canListenCached(receiverUuid, transmitting)) {
+            plugin.debugMicNotAllowedCancelled();
             event.cancel();
             return;
         }
@@ -159,6 +214,7 @@ public final class VoicechatBridge implements VoicechatPlugin {
             }
 
             if (isWithinDistance(senderPos, receiverPos, radioMinDistanceBlocks)) {
+                plugin.debugMicWithinMinDistanceProx();
                 return;
             }
         }
@@ -171,6 +227,7 @@ public final class VoicechatBridge implements VoicechatPlugin {
             .build();
 
         api.sendStaticSoundPacketTo(receiverConnection, staticPacket);
+        plugin.debugMicRadioSent();
     }
 
     private static boolean isWithinDistance(Position a, Position b, double blocks) {

@@ -64,4 +64,15 @@ public final class RadioItemUtil {
     public boolean isRadioInOffhand(Player player) {
         return isRadio(player.getInventory().getItemInOffHand());
     }
+
+    public boolean isItemsAdderAvailable() {
+        return itemsAdder != null && itemsAdder.isAvailable();
+    }
+
+    public String debugGetItemsAdderId(ItemStack itemStack) {
+        if (itemsAdder == null || !itemsAdder.isAvailable()) {
+            return null;
+        }
+        return itemsAdder.getCustomId(itemStack);
+    }
 }

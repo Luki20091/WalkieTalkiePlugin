@@ -69,6 +69,12 @@ public final class RadioState {
                 channels.add(channel);
             }
         }
+
+        // Offhand counts for listening as well (but transmit is still main-hand only).
+        RadioChannel offhand = itemUtil.getChannel(player.getInventory().getItemInOffHand());
+        if (offhand != null) {
+            channels.add(offhand);
+        }
         // Store as an immutable set to avoid accidental mutation across threads.
         hotbarCache.put(player.getUniqueId(), Collections.unmodifiableSet(channels));
     }

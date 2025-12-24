@@ -33,7 +33,13 @@ public final class RadioRegistry {
             if (id == null || id.isBlank()) {
                 continue;
             }
-            itemsAdderIdToChannel.put(id.trim().toLowerCase(Locale.ROOT), def.channel());
+            String baseId = id.trim();
+            itemsAdderIdToChannel.put(baseId.toLowerCase(Locale.ROOT), def.channel());
+
+            // Allow an optional "talking" texture variant while transmitting.
+            // Convention: <namespace>:<item>_1
+            String talkingId = baseId + "_1";
+            itemsAdderIdToChannel.put(talkingId.toLowerCase(Locale.ROOT), def.channel());
         }
     }
 

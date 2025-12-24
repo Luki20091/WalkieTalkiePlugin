@@ -1,7 +1,7 @@
 package me.Luki.WalkieTalkiePlugin.commands;
 
 import me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin;
-import me.Luki.WalkieTalkiePlugin.voice.VoicechatBridge;
+import me.Luki.WalkieTalkiePlugin.voice.VoiceBridge;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.command.Command;
@@ -50,14 +50,15 @@ public final class WalkieTalkieCommand implements CommandExecutor, TabCompleter 
                 boolean svcEnabled = plugin.getConfig().getBoolean("svc.enabled", true);
                 boolean sameWorldOnly = plugin.getConfig().getBoolean("svc.sameWorldOnly", true);
                 double radioMinDistance = plugin.getConfig().getDouble("svc.radioMinDistanceBlocks", 20.0);
+                int svcPort = plugin.getConfig().getInt("svc.port", 24454);
 
                 List<String> lines = plugin.getConfig().getStringList("commands.messages.info");
                 if (lines == null || lines.isEmpty()) {
                     send(sender, prefix() + "&bWalkieTalkiePlugin &7v" + version);
                     send(sender, prefix() + "&7SVC: &f" + svcEnabled + " &7worldOnly: &f" + sameWorldOnly);
                     send(sender, prefix() + "&7radioMinDistance: &f" + radioMinDistance);
-                    VoicechatBridge bridge = plugin.getVoicechatBridge();
-                    send(sender, prefix() + "&7SVC hook: &f" + (bridge != null));
+                    VoiceBridge bridge = plugin.getVoicechatBridge();
+                    send(sender, prefix() + "&7SVC hook: &f" + (bridge != null && bridge.isHooked()));
                     return true;
                 }
 
@@ -69,7 +70,8 @@ public final class WalkieTalkieCommand implements CommandExecutor, TabCompleter 
                         .replace("{version}", version)
                         .replace("{svcEnabled}", String.valueOf(svcEnabled))
                         .replace("{sameWorldOnly}", String.valueOf(sameWorldOnly))
-                        .replace("{radioMinDistance}", String.valueOf(radioMinDistance));
+                        .replace("{radioMinDistance}", String.valueOf(radioMinDistance))
+                        .replace("{svcPort}", String.valueOf(svcPort));
                     send(sender, prefix() + rendered);
                 }
                 return true;

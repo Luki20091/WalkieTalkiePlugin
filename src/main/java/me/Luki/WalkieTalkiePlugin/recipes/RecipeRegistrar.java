@@ -70,6 +70,12 @@ public final class RecipeRegistrar {
         if (itemsAdder != null && itemsAdder.isAvailable() && def.itemsAdderId() != null && !def.itemsAdderId().isBlank()) {
             ItemStack ia = itemsAdder.createItemStack(def.itemsAdderId(), 1);
             if (ia != null) {
+                // Also tag with our PDC so the plugin can identify the channel even if IA lookup fails.
+                ItemMeta meta = ia.getItemMeta();
+                if (meta != null) {
+                    meta.getPersistentDataContainer().set(pdcChannelKey, PersistentDataType.STRING, def.channel().id());
+                    ia.setItemMeta(meta);
+                }
                 return ia;
             }
         }

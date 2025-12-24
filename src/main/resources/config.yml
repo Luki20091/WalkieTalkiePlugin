@@ -1,6 +1,9 @@
 # WalkieTalkiePlugin configuration
 # Minecraft: 1.21.8
 
+# Developer mode (enables extra debug logging)
+dev: true
+
 # Nadawanie radiem: trzymaj radio w main hand + użyj PTT w Simple Voice Chat.
 
 # Simple Voice Chat (SVC) integration
@@ -9,6 +12,8 @@
 svc:
   enabled: true
   logHook: true
+  # Voice Chat UDP port (informational only; real port is configured in voicechat-server.properties)
+  port: 24454
   # If true, radio/proximity override will only apply within the same world.
   sameWorldOnly: true
   # MicrophonePacketEvent priority used when registering to SVC (higher runs later).
@@ -17,36 +22,43 @@ svc:
   # If receiver is closer (and is allowed to hear), we don't send radio to avoid overlap;
   # SVC proximity voice can handle it.
   # Set to 0 to always deliver radio.
-  radioMinDistanceBlocks: 40.0
+  radioMinDistanceBlocks: 100.0
 
 # ItemsAdder IDs (uzupełnimy później). Przykład formatu: "namespace:item_name"
 # Uwaga: radio-itemy będą bazować na "disc fragment".
 radios:
-  czerwoni: ""
-  niebiescy: ""
-  handlarze: ""
-  piraci: ""
-  tohandlarze: ""
-  piraci_random: ""
+  czerwoni: "radio:radio_czerwoni"
+  niebiescy: "radio:radio_niebiescy"
+  handlarze: "radio:radio_handlarze"
+  piraci: "radio:radio_piraci"
+  tohandlarze: "radio:radio_tohandlarze"
+  piraci_random: "radio:radio_piraci_random"
 
 # Feedback sound when starting/stopping radio transmit
 sounds:
   start:
     enabled: true
-    sound: "BLOCK_NOTE_BLOCK_PLING"
+    sound: "block.sand.place"
     volume: 1.0
-    pitch: 1.15
+    pitch: 0.5
   stop:
     enabled: true
-    sound: "BLOCK_NOTE_BLOCK_BASS"
+    sound: "block.sand.place"
     volume: 1.0
-    pitch: 0.85
+    pitch: 0.1
   # Played once when switching to a radio / between radios in hotbar
   switch:
     enabled: true
-    sound: "BLOCK_NOTE_BLOCK_PLING"
+    sound: "block.sand.place"
     volume: 0.8
-    pitch: 1.0
+    pitch: 0.8
+
+  # Played once when putting away a radio (switching away from a radio)
+  holster:
+    enabled: true
+    sound: "block.sand.place"
+    volume: 1.0
+    pitch: 0.1
 
   # Subtle loop/pulse for a "radio filter" feeling while transmitting (PTT active)
   # This plays locally to the sender only.
@@ -55,13 +67,13 @@ sounds:
     # Mode:
     # - ALWAYS: play while holding a transmit-capable radio
     # - PTT: play only shortly after mic packets (while actively speaking)
-    mode: "ALWAYS"
+    mode: "PTT"
     # How long after last mic packet we still consider the player "actively transmitting"
     activeForMs: 350
     # How often to play the pulse (ticks)
-    everyTicks: 10
-    sound: "BLOCK_NOTE_BLOCK_HAT"
-    volume: 0.15
+    everyTicks: 20
+    sound: "ambient.weather.rain"
+    volume: 0.04
     pitch: 1.8
 
 commands:
@@ -73,6 +85,7 @@ commands:
       - "&bWalkieTalkiePlugin &7v{version}"
       - "&7SVC: &f{svcEnabled} &7worldOnly: &f{sameWorldOnly}"
       - "&7radioMinDistance: &f{radioMinDistance}"
+      - "&7voicePort: &f{svcPort}"
 
 # ActionBar notifications (all optional)
 notifications:
@@ -89,7 +102,7 @@ notifications:
       actionBar: "&5Podsłuch"
     stop:
       enabled: true
-      actionBar: "&5Podsłuch wyłączony"
+      actionBar: "&5Koniec podsłuchu"
 
 # Hint: pokazuje nadającemu, że musi wcisnąć PTT w Simple Voice Chat
 hints:
@@ -101,4 +114,9 @@ hints:
     checkEveryTicks: 20
     # Minimalny odstęp między ponownym pokazaniem (ticki)
     cooldownTicks: 100
-    actionBar: "&eUżyj Voice Chat`u aby nadawać radiem"
+    actionBar: "&eUżyj Voice Chat`u aby nadawać"
+
+# Debugger / diagnostyka
+debug:
+  enabled: false
+  logIntervalMs: 5000

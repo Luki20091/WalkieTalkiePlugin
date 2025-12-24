@@ -37,7 +37,7 @@ public final class ItemsAdderBridge {
             byItem = cls.getMethod("byItemStack", ItemStack.class);
 
             // Different IA versions expose different getters
-            nsId = findMethod(cls, "getNamespacedID");
+            nsId = findAnyMethod(cls, "getNamespacedID", "getNamespacedId", "getNamespacedIdentifier");
             id = findMethod(cls, "getId");
 
             // Different IA versions expose different factories
@@ -77,14 +77,16 @@ public final class ItemsAdderBridge {
             }
             if (getNamespacedId != null) {
                 Object v = getNamespacedId.invoke(customStack);
-                if (v instanceof String s && !s.isBlank()) {
-                    return s;
+                String asString = toNonBlankString(v);
+                if (asString != null) {
+                    return asString;
                 }
             }
             if (getId != null) {
                 Object v = getId.invoke(customStack);
-                if (v instanceof String s && !s.isBlank()) {
-                    return s;
+                String asString = toNonBlankString(v);
+                if (asString != null) {
+                    return asString;
                 }
             }
             return null;
@@ -128,6 +130,22 @@ public final class ItemsAdderBridge {
         }
     }
 
+    private static Method findAnyMethod(Class<?> cls, String... names) {
+        if (names == null) {
+            return null;
+        }
+        for (String n : names) {
+            if (n == null || n.isBlank()) {
+                continue;
+            }
+            Method m = findMethod(cls, n);
+            if (m != null) {
+                return m;
+            }
+        }
+        return null;
+    }
+
     private static Method findStaticMethod(Class<?> cls, String name, Class<?>... params) {
         try {
             Method m = cls.getMethod(name, params);
@@ -135,5 +153,22 @@ public final class ItemsAdderBridge {
         } catch (NoSuchMethodException ignored) {
             return null;
         }
+    }
+
+    private static String toNonBlankString(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof String s) {
+            if (s.isBlank()) {
+                return null;
+            }
+            return s;
+        }
+        String s = String.valueOf(v).trim();
+        if (s.isBlank()) {
+            return null;
+        }
+        return s;
     }
 }

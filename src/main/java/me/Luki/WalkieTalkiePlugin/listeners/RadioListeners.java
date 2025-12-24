@@ -37,15 +37,8 @@ public final class RadioListeners implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
 
-        // Enforce: radios cannot exist in offhand
-        if (itemUtil.isRadioInOffhand(player)) {
-            var offhand = player.getInventory().getItemInOffHand();
-            player.getInventory().setItemInOffHand(null);
-
-            // Try move to inventory, else drop at feet
-            var leftover = player.getInventory().addItem(offhand);
-            leftover.values().forEach(item -> player.getWorld().dropItemNaturally(player.getLocation(), item));
-        }
+        // If the player logged out while transmitting, ensure we don't keep the "talking" texture.
+        plugin.normalizeTalkingVariantInMainHand(player, true);
 
         plugin.getRadioState().refreshHotbar(player);
         plugin.refreshTransmitCache(player);
@@ -61,6 +54,7 @@ public final class RadioListeners implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
+        plugin.normalizeTalkingVariantInMainHand(event.getPlayer(), true);
         plugin.getRadioState().clear(event.getPlayer().getUniqueId());
         plugin.clearTransmitCache(event.getPlayer().getUniqueId());
         plugin.clearPermissionCache(event.getPlayer().getUniqueId());
@@ -69,6 +63,7 @@ public final class RadioListeners implements Listener {
 
     @EventHandler
     public void onKick(PlayerKickEvent event) {
+        plugin.normalizeTalkingVariantInMainHand(event.getPlayer(), true);
         plugin.getRadioState().clear(event.getPlayer().getUniqueId());
         plugin.clearTransmitCache(event.getPlayer().getUniqueId());
         plugin.clearPermissionCache(event.getPlayer().getUniqueId());
@@ -77,26 +72,28 @@ public final class RadioListeners implements Listener {
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
     public void onSwapHands(PlayerSwapHandItemsEvent event) {
-        // Prevent radio in offhand (either from main to offhand or offhand to main)
-        if (itemUtil.isRadio(event.getMainHandItem()) || itemUtil.isRadio(event.getOffHandItem())) {
-            event.setCancelled(true);
-        }
+        // Offhand is allowed. Transmit is still main-hand only.
+        // Swapping hands (default key: F) does not fire hotbar change events, so we must refresh caches here.
+        Player player = event.getPlayer();
+        plugin.runNextTick(() -> {
+            plugin.getRadioState().refreshHotbar(player);
+            plugin.refreshTransmitCache(player);
+            plugin.refreshPermissionCache(player);
+
+            // Keep internal tracking consistent (used for hotbar switch sounds only).
+            RadioChannel inHand = itemUtil.getChannel(player.getInventory().getItemInMainHand());
+            if (inHand != null) {
+                lastHeldRadioChannel.put(player.getUniqueId(), inHand);
+            } else {
+                lastHeldRadioChannel.remove(player.getUniqueId());
+            }
+        });
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
-        }
-
-        // Offhand slot index differs per view; easiest: block when raw slot equals 45 in player inventory view.
-        // Additionally block when clicking the offhand slot in the bottom inventory.
-        int rawSlot = event.getRawSlot();
-        if (rawSlot == 45) {
-            if (itemUtil.isRadio(event.getCursor()) || itemUtil.isRadio(event.getCurrentItem())) {
-                event.setCancelled(true);
-                return;
-            }
         }
 
         // Any inventory change: refresh cached hotbar next tick
@@ -113,12 +110,6 @@ public final class RadioListeners implements Listener {
             return;
         }
 
-        // Offhand raw slot 45
-        if (event.getRawSlots().contains(45) && itemUtil.isRadio(event.getOldCursor())) {
-            event.setCancelled(true);
-            return;
-        }
-
         plugin.runNextTick(() -> {
             plugin.getRadioState().refreshHotbar(player);
             plugin.refreshTransmitCache(player);
@@ -129,6 +120,21 @@ public final class RadioListeners implements Listener {
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onDrop(PlayerDropItemEvent event) {
         Player player = event.getPlayer();
+
+        // Prevent leaving behind the "talking" variant on the ground.
+        try {
+            var entity = event.getItemDrop();
+            if (entity != null) {
+                var stack = entity.getItemStack();
+                var normalized = plugin.normalizeTalkingVariantToBase(stack);
+                if (normalized != null) {
+                    entity.setItemStack(normalized);
+                }
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+
         plugin.runNextTick(() -> {
             plugin.getRadioState().refreshHotbar(player);
             plugin.refreshTransmitCache(player);
@@ -159,6 +165,17 @@ public final class RadioListeners implements Listener {
                     }
                     lastHeldRadioChannel.put(uuid, nowInHand);
                 } else {
+                    // Radio was put away (switching away from a radio)
+                    String holsterSound = plugin.getConfig().getString("sounds.holster.sound", "");
+                    if (holsterSound != null && !holsterSound.isBlank()) {
+                        plugin.playFeedbackSound(player, "sounds.holster");
+                    } else {
+                        // Fallback to switch sound if holster isn't configured
+                        String switchSound = plugin.getConfig().getString("sounds.switch.sound", "");
+                        if (switchSound != null && !switchSound.isBlank()) {
+                            plugin.playFeedbackSound(player, "sounds.switch");
+                        }
+                    }
                     lastHeldRadioChannel.remove(uuid);
                 }
             }
