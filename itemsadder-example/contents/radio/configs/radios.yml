@@ -1,0 +1,252 @@
+info:
+  namespace: radio
+
+items:
+  # OFF / TRANSMIT / LISTEN
+  # The plugin swaps between _0/_1/_2.
+
+  radio_czerwoni_0:
+    display_name: "&fRadio: &cCzerwonych"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_czerwoni_0
+    recipes:
+      crafting_table:
+        permission: "radio.craft.czerwoni"
+        pattern:
+          - "I I"
+          - "IRI"
+          - " W "
+        ingredients:
+          I: IRON_INGOT
+          R: REDSTONE
+          W: RED_WOOL
+    stack_size: 1
+
+  radio_czerwoni_1:
+    display_name: "&fRadio: &cCzerwonych"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_czerwoni_1
+    stack_size: 1
+
+  radio_czerwoni_2:
+    display_name: "&fRadio: &cCzerwonych"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_czerwoni_2
+    stack_size: 1
+
+  radio_niebiescy_0:
+    display_name: "&fRadio: &9Niebieskich"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_niebiescy_0
+    recipes:
+      crafting_table:
+        permission: "radio.craft.niebiescy"
+        pattern:
+          - "I I"
+          - "IRI"
+          - " W "
+        ingredients:
+          I: IRON_INGOT
+          R: REDSTONE
+          W: BLUE_WOOL
+    stack_size: 1
+
+  radio_niebiescy_1:
+    display_name: "&fRadio: &9Niebieskich"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_niebiescy_1
+    stack_size: 1
+
+  radio_niebiescy_2:
+    display_name: "&fRadio: &9Niebieskich"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_niebiescy_2
+    stack_size: 1
+
+  radio_handlarze_0:
+    display_name: "&fRadio: &eHandlarzy"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_handlarze_0
+    recipes:
+      crafting_table:
+        permission: "radio.craft.handlarze"
+        pattern:
+          - "I I"
+          - "IRI"
+          - " W "
+        ingredients:
+          I: IRON_INGOT
+          R: REDSTONE
+          W: YELLOW_WOOL
+    stack_size: 1
+
+  radio_handlarze_1:
+    display_name: "&fRadio: &eHandlarzy"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_handlarze_1
+    stack_size: 1
+
+  radio_handlarze_2:
+    display_name: "&fRadio: &eHandlarzy"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_handlarze_2
+    stack_size: 1
+
+  radio_piraci_0:
+    display_name: "&fRadio: &cPiratów"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_piraci_0
+    recipes:
+      crafting_table:
+        permission: "radio.craft.piraci"
+        pattern:
+          - "I I"
+          - "IRI"
+          - " W "
+        ingredients:
+          I: IRON_INGOT
+          R: REDSTONE
+          W: GREEN_WOOL
+    stack_size: 1
+
+  radio_piraci_1:
+    display_name: "&fRadio: &cPiratów"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_piraci_1
+    stack_size: 1
+
+  radio_piraci_2:
+    display_name: "&fRadio: &cPiratów"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_piraci_2
+    stack_size: 1
+
+  radio_tohandlarze_0:
+    display_name: "&fRadio: &eDo Handlarzy"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_tohandlarze_0
+    recipes:
+      crafting_table:
+        permission: "radio.craft.tohandlarze"
+        pattern:
+          - "I I"
+          - "IRI"
+          - " W "
+        ingredients:
+          I: IRON_INGOT
+          R: REDSTONE
+          W: PURPLE_WOOL
+    stack_size: 1
+
+  radio_tohandlarze_1:
+    display_name: "&fRadio: &eDo Handlarzy"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_tohandlarze_1
+    stack_size: 1
+
+  radio_tohandlarze_2:
+    display_name: "&fRadio: &eDo Handlarzy"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_tohandlarze_2
+    stack_size: 1
+
+  radio_piraci_random_0:
+    display_name: "&fStare Radio: &0Piratów"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_piraci_random_0
+    recipes:
+      crafting_table:
+        permission: "radio.craft.randomchannel.piraci"
+        pattern:
+          - "I I"
+          - "IRI"
+          - " W "
+        ingredients:
+          I: IRON_INGOT
+          R: REDSTONE
+          W: BLACK_WOOL
+    stack_size: 1
+
+  radio_piraci_random_1:
+    display_name: "&fStare Radio: &0Piratów"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_piraci_random_1
+    stack_size: 1
+
+  radio_piraci_random_2:
+    display_name: "&fStare Radio: &0Piratów"
+    lore:
+      - '&7Trzymaj w głównej ręce.'
+    resource:
+      material: SHEARS
+      generate: false
+      model_path: item/radio_piraci_random_2
+    stack_size: 1

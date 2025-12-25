@@ -11,6 +11,7 @@ import de.maxhenkel.voicechat.api.events.EventRegistration;
 import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
 import de.maxhenkel.voicechat.api.events.VoicechatServerStartedEvent;
 import de.maxhenkel.voicechat.api.packets.MicrophonePacket;
+import de.maxhenkel.voicechat.api.packets.LocationalSoundPacket;
 import de.maxhenkel.voicechat.api.packets.StaticSoundPacket;
 import me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin;
 import me.Luki.WalkieTalkiePlugin.radio.RadioChannel;
@@ -29,6 +30,12 @@ public final class VoicechatBridge implements VoicechatPlugin, VoiceBridge {
     private volatile double radioMinDistanceBlocks;
     private volatile boolean sameWorldOnly;
 
+    private volatile boolean radioSpatialEnabled;
+    private volatile double radioSpatialOffsetBlocks;
+    private volatile float radioSpatialDistanceBlocks;
+
+    private volatile boolean hearSelfInDev;
+
     // DEV: SVC often doesn't emit a receiver==sender callback, so we do a best-effort loopback.
     // Rate-limited to avoid sending the loopback multiple times per microphone packet (event is per receiver).
     private final Map<UUID, Long> lastDevLoopbackAtNs = new ConcurrentHashMap<>();
@@ -46,6 +53,16 @@ public final class VoicechatBridge implements VoicechatPlugin, VoiceBridge {
         double minDistance = plugin.getConfig().getDouble("svc.radioMinDistanceBlocks", 20.0);
         this.radioMinDistanceBlocks = Math.max(0.0, minDistance);
         this.sameWorldOnly = plugin.getConfig().getBoolean("svc.sameWorldOnly", true);
+
+        this.radioSpatialEnabled = plugin.getConfig().getBoolean("svc.radioSpatial.enabled", true);
+        this.radioSpatialOffsetBlocks = Math.max(0.0, plugin.getConfig().getDouble("svc.radioSpatial.offsetBlocks", 5.0));
+        double dist = plugin.getConfig().getDouble("svc.radioSpatial.distanceBlocks", 8.0);
+        // Must be > offset, otherwise clients may never hear the packet.
+        dist = Math.max(dist, this.radioSpatialOffsetBlocks + 1.0);
+        this.radioSpatialDistanceBlocks = (float) Math.max(1.0, dist);
+
+        // DEV-only debug: optionally allow hearing yourself when transmitting.
+        this.hearSelfInDev = plugin.getConfig().getBoolean("svc.hearSelfInDev", false);
     }
 
     @Override
@@ -120,12 +137,29 @@ public final class VoicechatBridge implements VoicechatPlugin, VoiceBridge {
             return; // normal behavior
         }
 
+        // Enforce "busy line": at most one transmitter per channel.
+        // This is off-thread safe (uses cached state only).
+        Object senderWorldToken = null;
+        try {
+            ServerLevel senderLevel = senderPlayer.getServerLevel();
+            senderWorldToken = senderLevel != null ? senderLevel.getServerLevel() : null;
+        } catch (Throwable ignored) {
+            senderWorldToken = null;
+        }
+
+        if (!plugin.tryAcquireBusyLine(senderUuid, transmitting, senderWorldToken)) {
+            // While attempting radio transmit, do not leak proximity voice as a bypass.
+            event.cancel();
+            return;
+        }
+
         // Sender is holding a radio (and has permission) and we received an audio packet.
-        plugin.recordMicPacket(senderUuid);
+        // Pass channel so the plugin can update visuals immediately without waiting for cache refresh.
+        plugin.recordMicPacket(senderUuid, transmitting);
 
         // DEV: always allow hearing yourself to verify that transmit detection + routing work.
         // This doesn't rely on SVC creating a receiver callback for the sender.
-        if (plugin.isDevMode()) {
+        if (plugin.isDevMode() && hearSelfInDev) {
             long nowNs = System.nanoTime();
             Long lastNs = lastDevLoopbackAtNs.get(senderUuid);
             if (lastNs == null || (nowNs - lastNs) >= DEV_LOOPBACK_MIN_INTERVAL_NS) {
@@ -171,7 +205,7 @@ public final class VoicechatBridge implements VoicechatPlugin, VoiceBridge {
         // DEV: allow hearing yourself to verify that radio routing works.
         // Some SVC setups include a receiver callback for the sender; if so we can loop back.
         if (receiverUuid.equals(senderUuid)) {
-            if (!plugin.isDevMode()) {
+            if (!(plugin.isDevMode() && hearSelfInDev)) {
                 return;
             }
 
@@ -185,7 +219,7 @@ public final class VoicechatBridge implements VoicechatPlugin, VoiceBridge {
             return;
         }
 
-        if (sameWorldOnly) {
+        if (sameWorldOnly && !plugin.isRadioGlobalScope()) {
             ServerLevel senderLevel = senderPlayer.getServerLevel();
             ServerLevel receiverLevel = receiverPlayer.getServerLevel();
             Object senderWorld = senderLevel != null ? senderLevel.getServerLevel() : null;
@@ -222,12 +256,61 @@ public final class VoicechatBridge implements VoicechatPlugin, VoiceBridge {
         // Far enough: suppress prox and deliver radio direct
         event.cancel();
         MicrophonePacket micPacket = event.getPacket();
-        StaticSoundPacket staticPacket = micPacket.staticSoundPacketBuilder()
-            .channelId(transmitting.voicechatChannelId())
-            .build();
 
-        api.sendStaticSoundPacketTo(receiverConnection, staticPacket);
+        if (radioSpatialEnabled) {
+            // Place the perceived audio source a few blocks towards the sender.
+            Position senderPos = senderPlayer.getPosition();
+            Position receiverPos = receiverPlayer.getPosition();
+            if (senderPos != null && receiverPos != null) {
+                Position perceived = offsetTowards(receiverPos, senderPos, radioSpatialOffsetBlocks);
+                LocationalSoundPacket locPacket = micPacket.locationalSoundPacketBuilder()
+                    .channelId(transmitting.voicechatChannelId())
+                    .position(perceived)
+                    .distance(radioSpatialDistanceBlocks)
+                    .build();
+                api.sendLocationalSoundPacketTo(receiverConnection, locPacket);
+            } else {
+                StaticSoundPacket staticPacket = micPacket.staticSoundPacketBuilder()
+                    .channelId(transmitting.voicechatChannelId())
+                    .build();
+                api.sendStaticSoundPacketTo(receiverConnection, staticPacket);
+            }
+        } else {
+            StaticSoundPacket staticPacket = micPacket.staticSoundPacketBuilder()
+                .channelId(transmitting.voicechatChannelId())
+                .build();
+            api.sendStaticSoundPacketTo(receiverConnection, staticPacket);
+        }
+
+        plugin.recordRadioReceive(receiverUuid, transmitting);
         plugin.debugMicRadioSent();
+    }
+
+    private static Position offsetTowards(Position from, Position towards, double blocks) {
+        if (from == null || towards == null || blocks <= 0.0) {
+            return from;
+        }
+
+        double dx = towards.getX() - from.getX();
+        double dy = towards.getY() - from.getY();
+        double dz = towards.getZ() - from.getZ();
+        double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 1.0e-6) {
+            return from;
+        }
+
+        double ux = dx / len;
+        double uy = dy / len;
+        double uz = dz / len;
+
+        return new SimplePosition(
+            from.getX() + ux * blocks,
+            from.getY() + uy * blocks,
+            from.getZ() + uz * blocks
+        );
+    }
+
+    private record SimplePosition(double getX, double getY, double getZ) implements Position {
     }
 
     private static boolean isWithinDistance(Position a, Position b, double blocks) {

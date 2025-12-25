@@ -1,14 +1,12 @@
 package me.Luki.WalkieTalkiePlugin;
 
 import me.Luki.WalkieTalkiePlugin.listeners.RadioListeners;
-import me.Luki.WalkieTalkiePlugin.listeners.CraftPermissionListener;
 import me.Luki.WalkieTalkiePlugin.listeners.VoicechatAutoHookListener;
 import me.Luki.WalkieTalkiePlugin.items.ItemsAdderBridge;
 import me.Luki.WalkieTalkiePlugin.radio.RadioChannel;
 import me.Luki.WalkieTalkiePlugin.radio.RadioItemUtil;
 import me.Luki.WalkieTalkiePlugin.radio.RadioRegistry;
 import me.Luki.WalkieTalkiePlugin.radio.RadioState;
-import me.Luki.WalkieTalkiePlugin.recipes.RecipeRegistrar;
 import me.Luki.WalkieTalkiePlugin.voice.VoiceBridge;
 import me.Luki.WalkieTalkiePlugin.commands.WalkieTalkieCommand;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -21,12 +19,12 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import java.util.Map;
 import java.util.Locale;
-import java.util.Set;
 import java.util.UUID;
 import java.lang.reflect.Field;
 import java.util.concurrent.ConcurrentHashMap;
@@ -36,6 +34,25 @@ import static me.Luki.WalkieTalkiePlugin.radio.RadioItemKeys.channelKey;
 
 public final class WalkieTalkiePlugin extends JavaPlugin {
 
+    private enum RadioVisualStage {
+        OFF(0),
+        TRANSMIT(1),
+        LISTEN(2);
+
+        final int offset;
+
+        RadioVisualStage(int offset) {
+            this.offset = offset;
+        }
+    }
+
+    private enum RadioScope {
+        WORLD,
+        GLOBAL
+    }
+
+    private static final Object GLOBAL_WORLD_TOKEN = new Object();
+
     private RadioState radioState;
     private RadioRegistry radioRegistry;
     private RadioItemUtil itemUtil;
@@ -44,18 +61,76 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     private NamespacedKey radioChannelPdcKey;
 
     private final Map<UUID, Long> lastMicPacketAtMs = new ConcurrentHashMap<>();
-    private final Map<UUID, Long> lastPttHintAtMs = new ConcurrentHashMap<>();
     private final Map<UUID, Boolean> transmitUiActive = new ConcurrentHashMap<>();
-    private BukkitRunnable radioUiTask;
+    private final Map<UUID, BukkitTask> transmitClearTaskByPlayer = new ConcurrentHashMap<>();
+
+    private final Map<UUID, Long> lastRadioReceiveAtMs = new ConcurrentHashMap<>();
+    private final Map<UUID, RadioChannel> lastRadioReceiveChannel = new ConcurrentHashMap<>();
+    private final Map<UUID, BukkitTask> listenClearTaskByPlayer = new ConcurrentHashMap<>();
 
     private volatile VoiceBridge voicechatBridge;
 
     private static final Map<String, Sound> SOUND_LOOKUP = new ConcurrentHashMap<>();
 
     private final Map<UUID, RadioChannel> transmitChannelByPlayer = new ConcurrentHashMap<>();
-    private final Set<UUID> pttHintCandidates = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, RadioChannel> preferredListenChannelByPlayer = new ConcurrentHashMap<>();
 
     private final Map<UUID, PermissionSnapshot> permissionSnapshots = new ConcurrentHashMap<>();
+
+    private static final class BusyLine {
+        final UUID owner;
+        final long lastPacketAtMs;
+
+        private BusyLine(UUID owner, long lastPacketAtMs) {
+            this.owner = owner;
+            this.lastPacketAtMs = lastPacketAtMs;
+        }
+    }
+
+    private static final class BusyLineKey {
+        final Object worldToken;
+        final RadioChannel channel;
+        final int hash;
+
+        private BusyLineKey(Object worldToken, RadioChannel channel) {
+            this.worldToken = worldToken;
+            this.channel = channel;
+            int worldHash = worldToken == null ? 0 : System.identityHashCode(worldToken);
+            this.hash = (worldHash * 31) + (channel == null ? 0 : channel.hashCode());
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof BusyLineKey other)) {
+                return false;
+            }
+            return this.channel == other.channel && this.worldToken == other.worldToken;
+        }
+    }
+
+    private final Map<BusyLineKey, BusyLine> busyLineByChannel = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastBusyHintAtMs = new ConcurrentHashMap<>();
+    private volatile boolean busyLineEnabled;
+    private volatile long busyLineTimeoutMs;
+    private volatile long busyLineHintCooldownMs;
+
+    private volatile RadioScope radioScope = RadioScope.WORLD;
+
+    private volatile boolean listenVisualsEnabled;
+    private volatile long listenVisualActiveForMs;
+    private volatile long transmitVisualActiveForMs;
+
+    public boolean isRadioGlobalScope() {
+        return radioScope == RadioScope.GLOBAL;
+    }
 
     private final Map<String, Long> debugLastLogAtMs = new ConcurrentHashMap<>();
     private volatile boolean debugEnabled;
@@ -72,6 +147,12 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     private final AtomicLong dbgMicRadioSent = new AtomicLong();
 
     private final LegacyComponentSerializer legacy = LegacyComponentSerializer.legacySection();
+
+    // Repeating loops (hints + filter pulse)
+    private BukkitTask pttRequiredHintTask;
+    private BukkitTask filterLoopTask;
+    private final Map<UUID, Long> lastPttRequiredHintAtMs = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> holdToTalkActive = new ConcurrentHashMap<>();
 
     @Override
     public void onEnable() {
@@ -104,18 +185,17 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                 radioState.refreshHotbar(p);
                 refreshTransmitCache(p);
                 refreshPermissionCache(p);
+                refreshPreferredListenChannel(p);
             });
 
-            // Register crafting recipes + permissions
-            RecipeRegistrar registrar = new RecipeRegistrar(this, radioRegistry, this.itemsAdder, radioChannelPdcKey);
-            var recipes = registrar.registerAll();
-            getServer().getPluginManager().registerEvents(new CraftPermissionListener(recipes), this);
+            // Crafting is handled by ItemsAdder (recipes + permissions).
 
             // Transmit activation: hold radio in main hand + use Simple Voice Chat PTT.
             // (No additional hold-to-talk listener needed.)
             tryRegisterVoicechatIntegrationIfNeeded();
 
-            startRadioUiTask();
+            // Optional repeating loops (hints + filter pulse)
+            restartLoopTasksFromConfig();
 
             var command = getCommand("walkietalkie");
             if (command != null) {
@@ -152,17 +232,34 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         // so players don't get stuck with the transmitting texture after reload/stop.
         getServer().getOnlinePlayers().forEach(p -> normalizeTalkingVariantInMainHand(p, true));
 
-        if (radioUiTask != null) {
-            radioUiTask.cancel();
-            radioUiTask = null;
-        }
-
         lastMicPacketAtMs.clear();
-        lastPttHintAtMs.clear();
         transmitUiActive.clear();
         transmitChannelByPlayer.clear();
-        pttHintCandidates.clear();
         permissionSnapshots.clear();
+        lastRadioReceiveAtMs.clear();
+        lastRadioReceiveChannel.clear();
+
+        transmitClearTaskByPlayer.values().forEach(t -> {
+            try {
+                t.cancel();
+            } catch (Throwable ignored) {
+            }
+        });
+        transmitClearTaskByPlayer.clear();
+
+        listenClearTaskByPlayer.values().forEach(t -> {
+            try {
+                t.cancel();
+            } catch (Throwable ignored) {
+            }
+        });
+        listenClearTaskByPlayer.clear();
+        busyLineByChannel.clear();
+        lastBusyHintAtMs.clear();
+
+        stopLoopTasks();
+
+        holdToTalkActive.clear();
 
         getLogger().info("WalkieTalkiePlugin v" + version + " disabled.");
     }
@@ -180,24 +277,43 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         loadDebugConfig();
 
+        stopLoopTasks();
+
         if (radioRegistry != null) {
             radioRegistry.reload(getConfig().getConfigurationSection("radios"));
         }
+
+        lastRadioReceiveAtMs.clear();
+        lastRadioReceiveChannel.clear();
+        busyLineByChannel.clear();
+        lastBusyHintAtMs.clear();
 
         VoiceBridge bridge = voicechatBridge;
         if (bridge != null) {
             bridge.reloadFromConfig();
         }
 
-        // restart task to apply config changes
-        if (radioUiTask != null) {
-            radioUiTask.cancel();
-            radioUiTask = null;
-        }
-
         // Clear UI state to avoid stuck "transmitting" indicators
         transmitUiActive.clear();
-        startRadioUiTask();
+
+        // Best-effort: stop any long filter sound for online players on reload.
+        getServer().getOnlinePlayers().forEach(this::stopFilterLongSound);
+
+        transmitClearTaskByPlayer.values().forEach(t -> {
+            try {
+                t.cancel();
+            } catch (Throwable ignored) {
+            }
+        });
+        transmitClearTaskByPlayer.clear();
+
+        listenClearTaskByPlayer.values().forEach(t -> {
+            try {
+                t.cancel();
+            } catch (Throwable ignored) {
+            }
+        });
+        listenClearTaskByPlayer.clear();
 
         // Refresh caches for online players
         getServer().getOnlinePlayers().forEach(p -> {
@@ -206,7 +322,246 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             }
             refreshTransmitCache(p);
             refreshPermissionCache(p);
+            refreshPreferredListenChannel(p);
         });
+
+        restartLoopTasksFromConfig();
+    }
+
+    private void stopLoopTasks() {
+        BukkitTask hint = pttRequiredHintTask;
+        pttRequiredHintTask = null;
+        if (hint != null) {
+            try {
+                hint.cancel();
+            } catch (Throwable ignored) {
+            }
+        }
+
+        BukkitTask loop = filterLoopTask;
+        filterLoopTask = null;
+        if (loop != null) {
+            try {
+                loop.cancel();
+            } catch (Throwable ignored) {
+            }
+        }
+
+        lastPttRequiredHintAtMs.clear();
+    }
+
+    private String resolveFilterLoopBasePath() {
+        return getConfig().isConfigurationSection("hints.filterLoop")
+                ? "hints.filterLoop"
+                : "sounds.filterLoop";
+    }
+
+    /**
+     * Marks whether the player is currently holding-to-talk (PPM/USE_ITEM) with a transmit-capable radio.
+     * This is used by filterLoop mode HOLD to align start/stop exactly to the user's action.
+     */
+    public void setHoldToTalkActive(UUID playerUuid, boolean active) {
+        if (playerUuid == null) {
+            return;
+        }
+        if (active) {
+            holdToTalkActive.put(playerUuid, true);
+        } else {
+            holdToTalkActive.remove(playerUuid);
+        }
+    }
+
+    public boolean isHoldToTalkActive(UUID playerUuid) {
+        return playerUuid != null && Boolean.TRUE.equals(holdToTalkActive.get(playerUuid));
+    }
+
+    /**
+     * If filterLoop is enabled and in HOLD mode, play one pulse immediately.
+     * This removes the perceived delay caused by the periodic scheduler tick alignment.
+     */
+    public void maybePlayFilterLoopPulseNow(Player player) {
+        if (player == null) {
+            return;
+        }
+        String basePath = resolveFilterLoopBasePath();
+        if (!getConfig().getBoolean(basePath + ".enabled", true)) {
+            return;
+        }
+
+        String modeRaw = String.valueOf(getConfig().getString(basePath + ".mode", "PTT"));
+        String mode = modeRaw.trim().toUpperCase(Locale.ROOT);
+        if (!mode.equals("HOLD") && !mode.equals("HOLD_TO_TALK") && !mode.equals("USE_ITEM")) {
+            return;
+        }
+
+        playConfiguredSoundPulse(player, basePath);
+    }
+
+    /**
+     * Plays one filterLoop pulse immediately for PTT mode.
+     * Used to avoid waiting up to everyTicks before the first pulse after pressing SVC PTT.
+     */
+    private void maybePlayFilterLoopPulseNowOnMicStart(Player player) {
+        if (player == null) {
+            return;
+        }
+        String basePath = resolveFilterLoopBasePath();
+        if (!getConfig().getBoolean(basePath + ".enabled", true)) {
+            return;
+        }
+
+        String modeRaw = String.valueOf(getConfig().getString(basePath + ".mode", "PTT"));
+        String mode = modeRaw.trim().toUpperCase(Locale.ROOT);
+        if (!mode.equals("PTT")) {
+            return;
+        }
+
+        playConfiguredSoundPulse(player, basePath);
+    }
+
+    private void restartLoopTasksFromConfig() {
+        // Always cancel first to avoid duplicates (enable/reload safety)
+        stopLoopTasks();
+
+        // 1) PTT required hint loop
+        boolean pttHintEnabled = getConfig().getBoolean("hints.pttRequired.enabled", true);
+        if (pttHintEnabled) {
+            long afterMs = Math.max(0L, getConfig().getLong("hints.pttRequired.afterMs", 2000L));
+            int everyTicks = Math.max(1, getConfig().getInt("hints.pttRequired.checkEveryTicks", 20));
+            int cooldownTicks = Math.max(1, getConfig().getInt("hints.pttRequired.cooldownTicks", 100));
+            long cooldownMs = cooldownTicks * 50L;
+
+            pttRequiredHintTask = getServer().getScheduler().runTaskTimer(this, () -> {
+                long now = System.currentTimeMillis();
+
+                for (Player player : getServer().getOnlinePlayers()) {
+                    try {
+                        UUID uuid = player.getUniqueId();
+
+                        // Only show when the player is holding a transmit-capable radio.
+                        RadioChannel txChannel = getTransmitChannelFast(player);
+                        if (txChannel == null) {
+                            continue;
+                        }
+
+                        long lastMic = lastMicPacketAtMs.getOrDefault(uuid, 0L);
+                        boolean shouldHint = (lastMic == 0L) || (now - lastMic >= afterMs);
+                        if (!shouldHint) {
+                            continue;
+                        }
+
+                        long lastShown = lastPttRequiredHintAtMs.getOrDefault(uuid, 0L);
+                        if (lastShown > 0L && now - lastShown < cooldownMs) {
+                            continue;
+                        }
+
+                        lastPttRequiredHintAtMs.put(uuid, now);
+                        playConfiguredNotification(player, "hints.pttRequired");
+                    } catch (Throwable t) {
+                        debugLog("loop:pttHint", "pttRequired hint loop error: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+                    }
+                }
+            }, everyTicks, everyTicks);
+        }
+
+        // 2) Filter loop pulse (sound)
+        String filterBasePath = resolveFilterLoopBasePath();
+        boolean filterEnabled = getConfig().getBoolean(filterBasePath + ".enabled", true);
+        if (filterEnabled) {
+            String modeRaw = String.valueOf(getConfig().getString(filterBasePath + ".mode", "PTT"));
+            String mode = modeRaw.trim().toUpperCase(Locale.ROOT);
+            boolean always = mode.equals("ALWAYS");
+            boolean hold = mode.equals("HOLD") || mode.equals("HOLD_TO_TALK") || mode.equals("USE_ITEM");
+            long activeForMs = Math.max(0L, getConfig().getLong(filterBasePath + ".activeForMs", 350L));
+            int everyTicks = Math.max(1, getConfig().getInt(filterBasePath + ".everyTicks", 20));
+
+            filterLoopTask = getServer().getScheduler().runTaskTimer(this, () -> {
+                long now = System.currentTimeMillis();
+
+                for (Player player : getServer().getOnlinePlayers()) {
+                    try {
+                        UUID uuid = player.getUniqueId();
+
+                        // Only play when holding a transmit-capable radio.
+                        RadioChannel txChannel = getTransmitChannelFast(player);
+                        if (txChannel == null) {
+                            continue;
+                        }
+
+                        if (!always) {
+                            if (hold) {
+                                if (!isHoldToTalkActive(uuid)) {
+                                    continue;
+                                }
+                            } else {
+                            long lastMic = lastMicPacketAtMs.getOrDefault(uuid, 0L);
+                            if (lastMic <= 0L || now - lastMic > activeForMs) {
+                                continue;
+                            }
+                            }
+                        }
+
+                        playConfiguredSoundPulse(player, filterBasePath);
+                    } catch (Throwable t) {
+                        debugLog("loop:filterLoop", "filterLoop error: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+                    }
+                }
+            }, 0L, everyTicks);
+        }
+    }
+
+    private void playConfiguredSoundPulse(Player player, String basePath) {
+        if (player == null || basePath == null || basePath.isBlank()) {
+            return;
+        }
+
+        // New format: <basePath>.sounds: list of {sound, volume, pitch}
+        try {
+            var list = getConfig().getMapList(basePath + ".sounds");
+            if (list != null && !list.isEmpty()) {
+                for (var entry : list) {
+                    if (!(entry instanceof java.util.Map<?, ?> map)) {
+                        continue;
+                    }
+                    Object sObj = map.get("sound");
+                    String soundName = sObj == null ? "" : String.valueOf(sObj);
+                    if (soundName.isBlank()) {
+                        continue;
+                    }
+
+                    double volume = 1.0;
+                    double pitch = 1.0;
+                    Object vObj = map.get("volume");
+                    Object pObj = map.get("pitch");
+                    if (vObj instanceof Number n) {
+                        volume = n.doubleValue();
+                    } else if (vObj != null) {
+                        try { volume = Double.parseDouble(String.valueOf(vObj)); } catch (Exception ignored) {}
+                    }
+                    if (pObj instanceof Number n) {
+                        pitch = n.doubleValue();
+                    } else if (pObj != null) {
+                        try { pitch = Double.parseDouble(String.valueOf(pObj)); } catch (Exception ignored) {}
+                    }
+
+                    Sound sound = resolveSound(soundName);
+                    if (sound == null) {
+                        debugLog("sound:" + basePath, "Invalid sound in config: " + basePath + ".sounds[].sound='" + soundName + "'");
+                        // Best-effort: stop any long filter sound for online players.
+                        getServer().getOnlinePlayers().forEach(this::stopFilterLongSound);
+                        continue;
+                    }
+
+                    player.playSound(player.getLocation(), sound, (float) volume, (float) pitch);
+                }
+                return;
+            }
+        } catch (Throwable ignored) {
+            // best-effort; fall back to single sound
+        }
+
+        // Legacy format: <basePath>.sound/volume/pitch
+        playFeedbackSound(player, basePath);
     }
 
     public RadioChannel getTransmitChannelCached(UUID playerUuid) {
@@ -218,6 +573,14 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     public boolean canListenCached(UUID receiverUuid, RadioChannel transmitting) {
         if (receiverUuid == null || transmitting == null) {
+            return false;
+        }
+
+        // If multiple radios are in hotbar, we only listen to a single selected channel:
+        // the first radio found in hotbar excluding the main-hand slot.
+        RadioChannel preferred = preferredListenChannelByPlayer.get(receiverUuid);
+        if (preferred != null && preferred != transmitting) {
+            // Pirate random eavesdrop is handled below.
             return false;
         }
 
@@ -236,6 +599,46 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             return false;
         }
         return radioState != null && radioState.hasHotbarRadio(receiverUuid, transmitting);
+    }
+
+    public void refreshPreferredListenChannel(Player player) {
+        if (player == null || itemUtil == null) {
+            return;
+        }
+
+        UUID uuid = player.getUniqueId();
+        int heldSlot = player.getInventory().getHeldItemSlot();
+        RadioChannel selected = null;
+
+        for (int slot = 0; slot < 9; slot++) {
+            if (slot == heldSlot) {
+                continue;
+            }
+            ItemStack stack = player.getInventory().getItem(slot);
+            RadioChannel channel = itemUtil.getChannel(stack);
+            if (channel == null) {
+                continue;
+            }
+            // Only select channels the player can actually listen to.
+            if (!player.hasPermission(channel.listenPermission())) {
+                continue;
+            }
+            selected = channel;
+            break;
+        }
+
+        if (selected == null) {
+            preferredListenChannelByPlayer.remove(uuid);
+        } else {
+            preferredListenChannelByPlayer.put(uuid, selected);
+        }
+    }
+
+    public void clearPreferredListenChannel(UUID playerUuid) {
+        if (playerUuid == null) {
+            return;
+        }
+        preferredListenChannelByPlayer.remove(playerUuid);
     }
 
     public void refreshPermissionCache(Player player) {
@@ -268,7 +671,6 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             this.listenMask = listenMask;
             this.hasPirateRandomUse = hasPirateRandomUse;
         }
-
         public boolean hasListenPermission(RadioChannel channel) {
             if (channel == null) {
                 return false;
@@ -277,11 +679,125 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         }
     }
 
-    public void recordMicPacket(UUID senderUuid) {
+    public void recordMicPacket(UUID senderUuid, RadioChannel channel) {
         if (senderUuid == null) {
             return;
         }
-        lastMicPacketAtMs.put(senderUuid, System.currentTimeMillis());
+
+        long now = System.currentTimeMillis();
+        lastMicPacketAtMs.put(senderUuid, now);
+
+        // Keep caches warm even if some listener missed an inventory event.
+        if (channel != null) {
+            transmitChannelByPlayer.put(senderUuid, channel);
+        }
+
+        // Remove perceived "first PTT lag": don't wait for the periodic UI task tick.
+        // This method may be called off-thread and also multiple times per packet (SVC is per receiver),
+        // so we only trigger on the transition from inactive -> active.
+        boolean wasActive = Boolean.TRUE.equals(transmitUiActive.put(senderUuid, true));
+        if (!wasActive) {
+            UUID uuid = senderUuid;
+            RadioChannel txChannel = channel;
+            runNextTick(() -> {
+                Player player = getServer().getPlayer(uuid);
+                if (player == null) {
+                    return;
+                }
+                playTransmitStartSound(player);
+                playConfiguredNotification(player, "notifications.transmit.start");
+                // Start filterLoop immediately on mic start (PTT mode)
+                maybePlayFilterLoopPulseNowOnMicStart(player);
+                if (getConfig().getBoolean("visuals.transmit.enabled", true) && txChannel != null) {
+                    applyHotbarVisuals(player, txChannel, true, System.currentTimeMillis());
+                }
+            });
+        }
+
+        // Ensure a one-shot clear is scheduled (main thread).
+        UUID uuid = senderUuid;
+        runNextTick(() -> ensureTransmitClearScheduled(uuid));
+    }
+
+    public void recordMicPacket(UUID senderUuid) {
+        recordMicPacket(senderUuid, null);
+    }
+
+    // Called from VoicechatBridge (may be off-thread)
+    public void recordRadioReceive(UUID receiverUuid, RadioChannel channel) {
+        if (receiverUuid == null || channel == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        lastRadioReceiveAtMs.put(receiverUuid, now);
+        lastRadioReceiveChannel.put(receiverUuid, channel);
+
+        UUID uuid = receiverUuid;
+        runNextTick(() -> {
+            Player player = getServer().getPlayer(uuid);
+            if (player == null) {
+                return;
+            }
+            // applyHotbarVisuals reads lastRadioReceive* maps, so it will choose LISTEN immediately.
+            RadioChannel txChannel = transmitChannelByPlayer.get(uuid);
+            boolean txActive = Boolean.TRUE.equals(transmitUiActive.get(uuid));
+            applyHotbarVisuals(player, txChannel, txActive, System.currentTimeMillis());
+        });
+
+        runNextTick(() -> ensureListenClearScheduled(uuid));
+    }
+
+    // Called from VoicechatBridge (may be off-thread)
+    public boolean tryAcquireBusyLine(UUID senderUuid, RadioChannel channel, Object worldToken) {
+        if (!busyLineEnabled) {
+            return true;
+        }
+        if (senderUuid == null || channel == null) {
+            return false;
+        }
+
+        long now = System.currentTimeMillis();
+        Object token = (radioScope == RadioScope.GLOBAL) ? GLOBAL_WORLD_TOKEN : worldToken;
+        BusyLineKey key = new BusyLineKey(token, channel);
+        final boolean[] acquired = new boolean[]{false};
+        busyLineByChannel.compute(key, (k, cur) -> {
+            if (cur == null || senderUuid.equals(cur.owner) || (now - cur.lastPacketAtMs) > busyLineTimeoutMs) {
+                acquired[0] = true;
+                return new BusyLine(senderUuid, now);
+            }
+            acquired[0] = false;
+            return cur;
+        });
+
+        if (!acquired[0]) {
+            maybeNotifyBusyLine(senderUuid, now);
+        }
+        return acquired[0];
+    }
+
+    public void releaseBusyLineIfOwned(UUID playerUuid) {
+        if (playerUuid == null) {
+            return;
+        }
+
+        busyLineByChannel.entrySet().removeIf(e -> e.getValue() != null && playerUuid.equals(e.getValue().owner));
+        lastBusyHintAtMs.remove(playerUuid);
+    }
+
+    private void maybeNotifyBusyLine(UUID senderUuid, long nowMs) {
+        Long last = lastBusyHintAtMs.get(senderUuid);
+        if (last != null && (nowMs - last) < busyLineHintCooldownMs) {
+            return;
+        }
+        lastBusyHintAtMs.put(senderUuid, nowMs);
+        runNextTick(() -> {
+            Player p = getServer().getPlayer(senderUuid);
+            if (p == null) {
+                return;
+            }
+            playFeedbackSound(p, "sounds.busy");
+            playConfiguredNotification(p, "notifications.transmit.busy");
+        });
     }
 
     private void loadDebugConfig() {
@@ -289,6 +805,111 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         this.debugEnabled = devMode || getConfig().getBoolean("debug.enabled", false);
         long interval = getConfig().getLong("debug.logIntervalMs", 5000L);
         this.debugLogIntervalMs = Math.max(250L, interval);
+
+        String scopeRaw = String.valueOf(getConfig().getString("radio.scope", "WORLD"));
+        String scope = scopeRaw.trim().toUpperCase(Locale.ROOT);
+        if (scope.equals("GLOBAL")) {
+            this.radioScope = RadioScope.GLOBAL;
+        } else {
+            this.radioScope = RadioScope.WORLD;
+        }
+
+        this.busyLineEnabled = getConfig().getBoolean("radio.busyLine.enabled", true);
+        this.busyLineTimeoutMs = Math.max(100L, getConfig().getLong("radio.busyLine.timeoutMs", 350L));
+        this.busyLineHintCooldownMs = Math.max(100L, getConfig().getLong("radio.busyLine.hintCooldownMs", 750L));
+
+        this.listenVisualsEnabled = getConfig().getBoolean("visuals.listen.enabled", true);
+        this.listenVisualActiveForMs = Math.max(100L, getConfig().getLong("visuals.listen.activeForMs", 300L));
+
+        // How long to keep TRANSMIT visuals after last mic packet.
+        // Backwards-compatible fallback to the old filterLoop timing.
+        long txMs = getConfig().getLong("visuals.transmit.activeForMs", -1L);
+        if (txMs <= 0L) {
+            txMs = Math.max(0L, getConfig().getLong("sounds.filterLoop.activeForMs", 350L));
+        }
+        this.transmitVisualActiveForMs = Math.max(150L, txMs);
+    }
+
+    private void ensureTransmitClearScheduled(UUID playerUuid) {
+        if (playerUuid == null) {
+            return;
+        }
+        if (!Boolean.TRUE.equals(transmitUiActive.get(playerUuid))) {
+            return;
+        }
+        if (transmitClearTaskByPlayer.containsKey(playerUuid)) {
+            return;
+        }
+        scheduleTransmitClearCheck(playerUuid, transmitVisualActiveForMs);
+    }
+
+    private void scheduleTransmitClearCheck(UUID playerUuid, long delayMs) {
+        long delayTicks = Math.max(1L, (delayMs + 49L) / 50L);
+        BukkitTask task = getServer().getScheduler().runTaskLater(this, () -> {
+            transmitClearTaskByPlayer.remove(playerUuid);
+
+            long last = lastMicPacketAtMs.getOrDefault(playerUuid, 0L);
+            long now = System.currentTimeMillis();
+            long dueAt = last + transmitVisualActiveForMs;
+            if (last > 0L && now < dueAt) {
+                scheduleTransmitClearCheck(playerUuid, dueAt - now);
+                return;
+            }
+
+            boolean wasActive = Boolean.TRUE.equals(transmitUiActive.get(playerUuid));
+            transmitUiActive.put(playerUuid, false);
+
+            Player player = getServer().getPlayer(playerUuid);
+            if (player != null) {
+                if (wasActive) {
+                    stopFilterLongSound(player);
+                    playFeedbackSound(player, "sounds.stop");
+                    playConfiguredNotification(player, "notifications.transmit.stop");
+                }
+                RadioChannel txChannel = transmitChannelByPlayer.get(playerUuid);
+                applyHotbarVisuals(player, txChannel, false, System.currentTimeMillis());
+            }
+        }, delayTicks);
+        transmitClearTaskByPlayer.put(playerUuid, task);
+    }
+
+    private void ensureListenClearScheduled(UUID playerUuid) {
+        if (playerUuid == null) {
+            return;
+        }
+        if (!listenVisualsEnabled) {
+            return;
+        }
+        if (listenClearTaskByPlayer.containsKey(playerUuid)) {
+            return;
+        }
+        scheduleListenClearCheck(playerUuid, listenVisualActiveForMs);
+    }
+
+    private void scheduleListenClearCheck(UUID playerUuid, long delayMs) {
+        long delayTicks = Math.max(1L, (delayMs + 49L) / 50L);
+        BukkitTask task = getServer().getScheduler().runTaskLater(this, () -> {
+            listenClearTaskByPlayer.remove(playerUuid);
+
+            long last = lastRadioReceiveAtMs.getOrDefault(playerUuid, 0L);
+            long now = System.currentTimeMillis();
+            long dueAt = last + listenVisualActiveForMs;
+            if (last > 0L && now < dueAt) {
+                scheduleListenClearCheck(playerUuid, dueAt - now);
+                return;
+            }
+
+            lastRadioReceiveAtMs.remove(playerUuid);
+            lastRadioReceiveChannel.remove(playerUuid);
+
+            Player player = getServer().getPlayer(playerUuid);
+            if (player != null) {
+                RadioChannel txChannel = transmitChannelByPlayer.get(playerUuid);
+                boolean txActive = Boolean.TRUE.equals(transmitUiActive.get(playerUuid));
+                applyHotbarVisuals(player, txChannel, txActive, System.currentTimeMillis());
+            }
+        }, delayTicks);
+        listenClearTaskByPlayer.put(playerUuid, task);
     }
 
     // Safe to call off-thread (reads a volatile)
@@ -350,221 +971,228 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         dbgMicRadioSent.incrementAndGet();
     }
 
-    private void startRadioUiTask() {
-        boolean svcEnabled = getConfig().getBoolean("svc.enabled", true);
-        if (!svcEnabled) {
+
+
+    private void applyHotbarVisuals(Player player, RadioChannel txChannel, boolean txActive, long nowMs) {
+        if (player == null || itemUtil == null) {
             return;
         }
 
-        boolean hintEnabled = getConfig().getBoolean("hints.pttRequired.enabled", true);
-        int hintCheckEveryTicks = Math.max(1, getConfig().getInt("hints.pttRequired.checkEveryTicks", 10));
-        long hintAfterMs = Math.max(0L, getConfig().getLong("hints.pttRequired.afterMs", 750L));
-        int hintCooldownTicks = Math.max(0, getConfig().getInt("hints.pttRequired.cooldownTicks", 40));
-        long hintCooldownMs = hintCooldownTicks * 50L;
-
-        boolean filterEnabled = getConfig().getBoolean("sounds.filterLoop.enabled", true);
-        int filterEveryTicks = Math.max(1, getConfig().getInt("sounds.filterLoop.everyTicks", 10));
-        long filterActiveForMs = Math.max(0L, getConfig().getLong("sounds.filterLoop.activeForMs", 350L));
-        String modeRaw = String.valueOf(getConfig().getString("sounds.filterLoop.mode", "ALWAYS"));
-        String mode = modeRaw.trim().toUpperCase(Locale.ROOT);
-        boolean filterPttOnly = mode.equals("PTT");
-
-        // Transmit UI (actionbar + start/stop sounds) is driven by actual mic packets.
-        // Reuse the filter active window as a sensible default for "PTT is active".
-        long transmitActiveForMs = Math.max(150L, filterActiveForMs);
-
-        if (!hintEnabled && !filterEnabled) {
-            return;
-        }
-
-        int periodTicks;
-        if (hintEnabled && filterEnabled) {
-            periodTicks = Math.min(hintCheckEveryTicks, filterEveryTicks);
-        } else if (hintEnabled) {
-            periodTicks = hintCheckEveryTicks;
-        } else {
-            periodTicks = filterEveryTicks;
-        }
-
-        radioUiTask = new BukkitRunnable() {
-            private int elapsedTicks = 0;
-            private long lastDebugStatsAt = 0L;
-            private int selfHealCooldownTicks = 0;
-
-            @Override
-            public void run() {
-                try {
-                    // If SVC isn't present, UI effects are misleading.
-                    if (getServer().getPluginManager().getPlugin("voicechat") == null) {
-                        return;
-                    }
-
-                    // Self-heal in case candidate set got out-of-sync (reloads, missed events, etc.)
-                    // This is main-thread only and does NOT poll positions.
-                    if (selfHealCooldownTicks <= 0 && (pttHintCandidates.isEmpty() && !getServer().getOnlinePlayers().isEmpty())) {
-                        for (Player p : getServer().getOnlinePlayers()) {
-                            refreshTransmitCache(p);
-                            refreshPermissionCache(p);
-                        }
-                        selfHealCooldownTicks = 40; // 2s
-                        debugLog("selfheal", "Self-heal refreshed caches for online players (candidates were empty)");
-                    } else {
-                        selfHealCooldownTicks = Math.max(0, selfHealCooldownTicks - periodTicks);
-                    }
-
-                    elapsedTicks += periodTicks;
-                    boolean doHint = hintEnabled && (elapsedTicks % hintCheckEveryTicks == 0);
-                    boolean doFilter = filterEnabled && (elapsedTicks % filterEveryTicks == 0);
-                    if (!doHint && !doFilter) {
-                        return;
-                    }
-
-                    long now = System.currentTimeMillis();
-
-                    if (debugEnabled && now - lastDebugStatsAt >= debugLogIntervalMs) {
-                        long mic = dbgMicEvents.getAndSet(0);
-                        long noSender = dbgMicNoSender.getAndSet(0);
-                        long noReceiver = dbgMicNoReceiver.getAndSet(0);
-                        long noTx = dbgMicNoTransmitChannel.getAndSet(0);
-                        long crossWorld = dbgMicCrossWorldCancelled.getAndSet(0);
-                        long notAllowed = dbgMicNotAllowedCancelled.getAndSet(0);
-                        long withinMin = dbgMicWithinMinDistanceProx.getAndSet(0);
-                        long sent = dbgMicRadioSent.getAndSet(0);
-                        debugLog("stats", "mic=" + mic
-                            + " noSender=" + noSender
-                            + " noReceiver=" + noReceiver
-                            + " noTx=" + noTx
-                            + " crossWorldCancel=" + crossWorld
-                            + " notAllowedCancel=" + notAllowed
-                            + " withinMinProx=" + withinMin
-                            + " radioSent=" + sent
-                            + " candidates=" + pttHintCandidates.size());
-                        lastDebugStatsAt = now;
-                    }
-
-                    var iterator = pttHintCandidates.iterator();
-                    while (iterator.hasNext()) {
-                        UUID uuid = iterator.next();
-                        Player player = getServer().getPlayer(uuid);
-                        if (player == null) {
-                            iterator.remove();
-                            transmitUiActive.remove(uuid);
-                            continue;
-                        }
-
-                        RadioChannel channel = transmitChannelByPlayer.get(uuid);
-                        if (channel == null) {
-                            iterator.remove();
-                            transmitUiActive.remove(uuid);
-                            continue;
-                        }
-
-                        long lastMic = lastMicPacketAtMs.getOrDefault(uuid, 0L);
-
-                        // Transmit feedback (start/stop) based on mic activity.
-                        boolean isActive = lastMic > 0L && (now - lastMic <= transmitActiveForMs);
-                        boolean wasActive = Boolean.TRUE.equals(transmitUiActive.get(uuid));
-                        if (isActive != wasActive) {
-                            if (isActive) {
-                                playFeedbackSound(player, "sounds.start");
-                                playConfiguredNotification(player, "notifications.transmit.start");
-                                applyTransmitTextureVariant(player, channel, true);
-                                debugLog("tx:" + uuid, "TX START channel=" + channel.id());
-                            } else {
-                                playFeedbackSound(player, "sounds.stop");
-                                playConfiguredNotification(player, "notifications.transmit.stop");
-                                applyTransmitTextureVariant(player, channel, false);
-                                debugLog("tx:" + uuid, "TX STOP channel=" + channel.id());
-                            }
-                            transmitUiActive.put(uuid, isActive);
-                        }
-
-                        if (doHint) {
-                            if (now - lastMic >= hintAfterMs) {
-                                long lastHint = lastPttHintAtMs.getOrDefault(uuid, 0L);
-                                if (hintCooldownMs <= 0 || now - lastHint >= hintCooldownMs) {
-                                    playConfiguredNotification(player, "hints.pttRequired");
-                                    lastPttHintAtMs.put(uuid, now);
-                                    debugLog("hint:" + uuid, "PTT hint shown (no mic packets recently)");
-                                }
-                            }
-                        }
-
-                        if (doFilter) {
-                            if (!filterPttOnly || filterActiveForMs <= 0 || now - lastMic <= filterActiveForMs) {
-                                // Local-only pulse that gives a subtle "radio filter" feel.
-                                playFeedbackSound(player, "sounds.filterLoop");
-                            }
-                        }
-                    }
-                } catch (Throwable t) {
-                    getLogger().severe("[WT] radio UI task crashed: " + t.getClass().getSimpleName() + ": " + t.getMessage());
-                    t.printStackTrace();
-                }
+        UUID uuid = player.getUniqueId();
+        boolean listenActive = false;
+        RadioChannel listenChannel = null;
+        if (listenVisualsEnabled) {
+            long lastHeard = lastRadioReceiveAtMs.getOrDefault(uuid, 0L);
+            if (lastHeard > 0L && (nowMs - lastHeard) <= listenVisualActiveForMs) {
+                listenActive = true;
+                listenChannel = lastRadioReceiveChannel.get(uuid);
             }
-        };
+        }
 
-        radioUiTask.runTaskTimer(this, periodTicks, periodTicks);
+        int heldSlot = player.getInventory().getHeldItemSlot();
+        boolean anyChanged = false;
+        for (int slot = 0; slot < 9; slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            RadioChannel itemChannel = itemUtil.getChannel(stack);
+            if (itemChannel == null) {
+                continue;
+            }
+
+            RadioVisualStage desired;
+            if (txActive && txChannel != null && slot == heldSlot && itemChannel == txChannel) {
+                desired = RadioVisualStage.TRANSMIT;
+            } else if (listenActive && listenChannel != null && itemChannel == listenChannel) {
+                desired = RadioVisualStage.LISTEN;
+            } else {
+                desired = RadioVisualStage.OFF;
+            }
+
+            ItemStack updated = applyRadioVisualStage(stack, itemChannel, desired);
+            if (updated != null) {
+                // Even if the instance is the same (meta mutation), set it back to ensure
+                // Bukkit/clients refresh the slot reliably.
+                player.getInventory().setItem(slot, updated);
+                anyChanged = true;
+            }
+        }
+
+        // Some clients don't reliably refresh slot icons when only meta changes.
+        // This is intentionally only done on transitions (when we actually changed something).
+        if (anyChanged) {
+            try {
+                player.updateInventory();
+            } catch (Throwable ignored) {
+                // best-effort
+            }
+        }
     }
 
-    private void applyTransmitTextureVariant(Player player, RadioChannel channel, boolean transmitting) {
-        if (player == null || channel == null) {
-            return;
+    private String getStageItemsAdderId(RadioChannel channel, RadioVisualStage stage) {
+        if (channel == null || stage == null || radioRegistry == null) {
+            return null;
         }
-        if (itemUtil == null || radioRegistry == null || itemsAdder == null || !itemsAdder.isAvailable()) {
-            return;
-        }
-
-        ItemStack current = player.getInventory().getItemInMainHand();
-        if (current == null || current.getType().isAir()) {
-            return;
-        }
-
-        // Only touch radios that belong to this channel.
-        RadioChannel inHand = itemUtil.getChannel(current);
-        if (inHand != channel) {
-            return;
-        }
-
         var def = radioRegistry.get(channel);
         if (def == null) {
-            return;
+            return null;
         }
-        String baseId = def.itemsAdderId();
-        if (baseId == null || baseId.isBlank()) {
+        String raw = def.itemsAdderId();
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+
+        String configured = raw.trim();
+
+        // Support both conventions:
+        // - configured = "radio:radio_czerwoni" (OFF), stages => _1/_2
+        // - configured = "radio:radio_czerwoni_0" (OFF), stages => _1/_2
+        String base = configured;
+        String offId = configured;
+        if (configured.endsWith("_0")) {
+            base = configured.substring(0, configured.length() - 2);
+            offId = configured;
+        } else if (configured.endsWith("_1") || configured.endsWith("_2")) {
+            base = configured.substring(0, configured.length() - 2);
+            // If someone misconfigured the base as a stage id, treat base itself as OFF.
+            offId = base;
+        }
+
+        if (stage == RadioVisualStage.OFF) {
+            return offId;
+        }
+        if (stage == RadioVisualStage.TRANSMIT) {
+            return base + "_1";
+        }
+        return base + "_2";
+    }
+
+    private ItemStack applyRadioVisualStage(ItemStack stack, RadioChannel channel, RadioVisualStage stage) {
+        if (stack == null || channel == null || stage == null || itemUtil == null) {
+            return null;
+        }
+        if (itemUtil.getChannel(stack) != channel) {
+            return null;
+        }
+
+        // Version 2: swap ItemsAdder item id instead of changing CMD.
+        // This avoids colliding with other IA items (e.g. internal icons/arrows) that share CMD space.
+        if (itemsAdder != null && itemsAdder.isAvailable()) {
+            String targetId = getStageItemsAdderId(channel, stage);
+            if (targetId != null && !targetId.isBlank()) {
+                String curId = itemsAdder.getCustomId(stack);
+                if (equalsIgnoreCase(curId, targetId)) {
+                    return null;
+                }
+                ItemStack swapped = itemsAdder.createItemStack(targetId, stack.getAmount());
+                if (swapped != null) {
+                    tagRadioChannel(swapped, channel);
+                    return swapped;
+                }
+
+                // Compatibility: many packs only define staged items (<base>_0/_1/_2) and do NOT provide the base item.
+                // If config uses <base> without suffix, OFF would try to swap to <base> which may not exist -> stuck _1.
+                if (stage == RadioVisualStage.OFF && !targetId.endsWith("_0")) {
+                    String altOff = targetId + "_0";
+                    ItemStack swappedAlt = itemsAdder.createItemStack(altOff, stack.getAmount());
+                    if (swappedAlt != null) {
+                        tagRadioChannel(swappedAlt, channel);
+                        return swappedAlt;
+                    }
+                }
+
+                // If this is an ItemsAdder radio, never fall back to CMD mutations.
+                // Missing staged items should degrade to "no visual change" rather than jumping
+                // into other IA items that share CMD space.
+                if (curId != null && !curId.isBlank()) {
+                    return null;
+                }
+            }
+        }
+
+        // Fallback for non-ItemsAdder radios (or if IA stage item is missing): minimal three-stage CMD.
+        int desired = 1 + stage.offset;
+        boolean changed = itemUtil.setCustomModelData(stack, desired);
+        return changed ? stack : null;
+    }
+
+    public boolean isRadioOnStage(ItemStack stack) {
+        if (stack == null || itemUtil == null) {
+            return false;
+        }
+        RadioChannel channel = itemUtil.getChannel(stack);
+        if (channel == null) {
+            return false;
+        }
+
+        // "Active" for anti-drop/anti-steal is TRANSMIT only.
+        if (itemsAdder != null && itemsAdder.isAvailable()) {
+            String txId = getStageItemsAdderId(channel, RadioVisualStage.TRANSMIT);
+            if (txId == null || txId.isBlank()) {
+                return false;
+            }
+            String curId = itemsAdder.getCustomId(stack);
+            return equalsIgnoreCase(curId, txId);
+        }
+
+        int cmd = itemUtil.getCustomModelData(stack);
+        return cmd == (1 + RadioVisualStage.TRANSMIT.offset);
+    }
+
+    public void refreshHotbarVisualsNow(Player player) {
+        if (player == null) {
             return;
         }
 
-        String talkingId = baseId.trim() + "_1";
-        String currentId = itemUtil.debugGetItemsAdderId(current);
+        UUID uuid = player.getUniqueId();
+        RadioChannel txChannel = transmitChannelByPlayer.get(uuid);
+        long now = System.currentTimeMillis();
 
-        if (transmitting) {
-            if (equalsIgnoreCase(currentId, talkingId)) {
-                return;
-            }
-            // Only swap if we're holding the base IA item (or if IA ID is unknown but channel is tagged).
-            if (currentId != null && !equalsIgnoreCase(currentId, baseId)) {
-                return;
-            }
-            ItemStack swapped = itemsAdder.createItemStack(talkingId, current.getAmount());
-            if (swapped == null) {
-                debugLog("txtex:" + player.getUniqueId(), "No ItemsAdder talking variant found: " + talkingId);
-                return;
-            }
-            tagRadioChannel(swapped, channel);
-            player.getInventory().setItemInMainHand(swapped);
-        } else {
-            if (!equalsIgnoreCase(currentId, talkingId)) {
-                return;
-            }
-            ItemStack reverted = itemsAdder.createItemStack(baseId, current.getAmount());
-            if (reverted == null) {
-                debugLog("txtex:" + player.getUniqueId(), "No ItemsAdder base item found: " + baseId);
-                return;
-            }
-            tagRadioChannel(reverted, channel);
-            player.getInventory().setItemInMainHand(reverted);
+        long lastMic = lastMicPacketAtMs.getOrDefault(uuid, 0L);
+        boolean txActive = lastMic > 0L && (now - lastMic <= transmitVisualActiveForMs);
+
+        applyHotbarVisuals(player, txChannel, txActive, now);
+    }
+
+    public void refreshHotbarVisualsAssumeInactive(Player player) {
+        if (player == null) {
+            return;
         }
+
+        UUID uuid = player.getUniqueId();
+        RadioChannel txChannel = transmitChannelByPlayer.get(uuid);
+        long now = System.currentTimeMillis();
+        applyHotbarVisuals(player, txChannel, false, now);
+    }
+
+    /**
+     * Hard-stop any transmit visuals for this player.
+     * Used when we have an explicit "stop transmitting" signal (e.g. hold-to-talk release),
+     * to avoid stuck _1 ItemsAdder variants if silence timeouts aren't scheduled.
+     */
+    public void forceStopTransmitVisuals(Player player) {
+        if (player == null) {
+            return;
+        }
+
+        UUID uuid = player.getUniqueId();
+
+        // Cancel any pending silence timeout.
+        BukkitTask task = transmitClearTaskByPlayer.remove(uuid);
+        if (task != null) {
+            try {
+                task.cancel();
+            } catch (Throwable ignored) {
+                // best-effort
+            }
+        }
+
+        // Clear the "active" flags/timestamps so visuals are definitely OFF.
+        transmitUiActive.put(uuid, false);
+        lastMicPacketAtMs.remove(uuid);
+
+        stopFilterLongSound(player);
+
+        // Apply OFF stage immediately.
+        applyHotbarVisuals(player, transmitChannelByPlayer.get(uuid), false, System.currentTimeMillis());
     }
 
     /**
@@ -580,10 +1208,6 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             if (Boolean.TRUE.equals(transmitUiActive.get(uuid))) {
                 return;
             }
-        }
-
-        if (itemUtil == null || radioRegistry == null || itemsAdder == null || !itemsAdder.isAvailable()) {
-            return;
         }
 
         ItemStack current = player.getInventory().getItemInMainHand();
@@ -605,7 +1229,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         if (stack == null || stack.getType().isAir()) {
             return null;
         }
-        if (itemUtil == null || radioRegistry == null || itemsAdder == null || !itemsAdder.isAvailable()) {
+
+        if (itemUtil == null) {
             return null;
         }
 
@@ -613,27 +1238,68 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         if (channel == null) {
             return null;
         }
-        var def = radioRegistry.get(channel);
-        if (def == null) {
-            return null;
-        }
-        String baseId = def.itemsAdderId();
-        if (baseId == null || baseId.isBlank()) {
-            return null;
+
+        // Always force inactive visual when we normalize (inventory/chest/drop safety).
+        ItemStack revertedOff = applyRadioVisualStage(stack, channel, RadioVisualStage.OFF);
+        if (revertedOff != null) {
+            return revertedOff;
         }
 
-        String talkingId = baseId.trim() + "_1";
-        String currentId = itemUtil.debugGetItemsAdderId(stack);
-        if (!equalsIgnoreCase(currentId, talkingId)) {
-            return null;
+        // No visual change needed; keep stack as-is.
+        // (For non-IA items, applyRadioVisualStage already handled CMD changes.)
+        // We preserve legacy behavior: return null if nothing changed.
+        // 'changed' remains false here.
+
+        return null;
+    }
+
+    public boolean isTransmitUiActive(UUID uuid) {
+        return uuid != null && Boolean.TRUE.equals(transmitUiActive.get(uuid));
+    }
+
+    /**
+     * Best-effort safety: ensure that radios stored outside the main hand are never left in the ON stage.
+     * This prevents "stealing" an active radio from inventories/chests.
+     */
+    public void normalizeRadiosForStorage(Player player) {
+        if (player == null || itemUtil == null) {
+            return;
         }
 
-        ItemStack reverted = itemsAdder.createItemStack(baseId, stack.getAmount());
-        if (reverted == null) {
-            return null;
+        // Hotbar (0-8) may show OFF/TRANSMIT/LISTEN visuals.
+        // Only normalize storage slots.
+        for (int slot = 9; slot < 36; slot++) {
+            ItemStack item = player.getInventory().getItem(slot);
+            ItemStack normalized = normalizeTalkingVariantToBase(item);
+            if (normalized != null) {
+                player.getInventory().setItem(slot, normalized);
+            }
         }
-        tagRadioChannel(reverted, channel);
-        return reverted;
+
+        // Offhand should never be ON.
+        ItemStack offhand = player.getInventory().getItemInOffHand();
+        ItemStack offhandNorm = normalizeTalkingVariantToBase(offhand);
+        if (offhandNorm != null) {
+            player.getInventory().setItemInOffHand(offhandNorm);
+        }
+
+        try {
+            var view = player.getOpenInventory();
+            if (view != null) {
+                var top = view.getTopInventory();
+                if (top != null) {
+                    ItemStack[] contents = top.getContents();
+                    for (int i = 0; i < contents.length; i++) {
+                        ItemStack normalized = normalizeTalkingVariantToBase(contents[i]);
+                        if (normalized != null) {
+                            top.setItem(i, normalized);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
     }
 
     private void tagRadioChannel(ItemStack stack, RadioChannel channel) {
@@ -684,7 +1350,6 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                 return cached;
             }
             transmitChannelByPlayer.remove(uuid);
-            pttHintCandidates.remove(uuid);
         }
 
         refreshTransmitCache(player);
@@ -708,13 +1373,11 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                         + " iaId=" + (iaId == null ? "null" : iaId));
             }
             transmitChannelByPlayer.remove(uuid);
-            pttHintCandidates.remove(uuid);
             return;
         }
 
         if (channel == RadioChannel.PIRACI_RANDOM) {
             transmitChannelByPlayer.remove(uuid);
-            pttHintCandidates.remove(uuid);
             return;
         }
 
@@ -723,12 +1386,10 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                 debugLog("noTxPerm:" + uuid, "Missing use permission for channel=" + channel.id() + " perm=" + channel.usePermission());
             }
             transmitChannelByPlayer.remove(uuid);
-            pttHintCandidates.remove(uuid);
             return;
         }
 
         transmitChannelByPlayer.put(uuid, channel);
-        pttHintCandidates.add(uuid);
     }
 
     public void clearTransmitCache(UUID uuid) {
@@ -736,7 +1397,6 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             return;
         }
         transmitChannelByPlayer.remove(uuid);
-        pttHintCandidates.remove(uuid);
     }
 
     public void runNextTick(Runnable runnable) {
@@ -768,6 +1428,72 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         }
 
         player.playSound(player.getLocation(), sound, volume, pitch);
+    }
+
+    public void playTransmitStartSound(Player player) {
+        playFilterLongSound(player);
+
+        // User requirement: play two sounds on transmit start.
+        // 1) Dedicated TX start (block place by default)
+        // 2) Legacy generic start sound (for backwards compatibility and stacking)
+        String soundName = getConfig().getString("sounds.transmitStart.sound", "");
+        if (soundName != null && !soundName.isBlank()) {
+            playFeedbackSound(player, "sounds.transmitStart");
+        }
+
+        playFeedbackSound(player, "sounds.start");
+    }
+
+    private void playFilterLongSound(Player player) {
+        if (player == null) {
+            return;
+        }
+
+        String basePath = "sounds.filterLong";
+        if (!getConfig().getBoolean(basePath + ".enabled", false)) {
+            return;
+        }
+
+        String soundName = String.valueOf(getConfig().getString(basePath + ".sound", "")).trim();
+        if (soundName.isBlank()) {
+            return;
+        }
+
+        float volume = (float) getConfig().getDouble(basePath + ".volume", 1.0);
+        float pitch = (float) getConfig().getDouble(basePath + ".pitch", 1.0);
+
+        // Prevent overlap if we retrigger quickly.
+        stopFilterLongSound(player);
+
+        try {
+            // Plays a custom resource-pack sound event by key (e.g. "radio:filter_long").
+            player.playSound(player.getLocation(), soundName, volume, pitch);
+        } catch (Throwable t) {
+            debugLog("sound:" + basePath, "Failed to play custom sound '" + soundName + "': " + t.getClass().getSimpleName() + ": " + t.getMessage());
+        }
+    }
+
+    private void stopFilterLongSound(Player player) {
+        if (player == null) {
+            return;
+        }
+
+        String basePath = "sounds.filterLong";
+        if (!getConfig().getBoolean(basePath + ".enabled", false)) {
+            return;
+        }
+
+        String soundName = String.valueOf(getConfig().getString(basePath + ".sound", "")).trim();
+        if (soundName.isBlank()) {
+            return;
+        }
+
+        try {
+            // Stops that specific sound key for the player.
+            player.stopSound(soundName);
+        } catch (Throwable ignored) {
+            // best-effort
+        }
     }
 
     private static Sound resolveSound(String configValue) {

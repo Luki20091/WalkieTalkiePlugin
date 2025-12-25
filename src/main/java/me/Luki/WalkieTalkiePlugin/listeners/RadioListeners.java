@@ -7,8 +7,17 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.ClickType;
+import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryCreativeEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.block.BlockDispenseEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -43,6 +52,7 @@ public final class RadioListeners implements Listener {
         plugin.getRadioState().refreshHotbar(player);
         plugin.refreshTransmitCache(player);
         plugin.refreshPermissionCache(player);
+        plugin.refreshPreferredListenChannel(player);
 
         RadioChannel inHand = itemUtil.getChannel(player.getInventory().getItemInMainHand());
         if (inHand != null) {
@@ -50,23 +60,33 @@ public final class RadioListeners implements Listener {
         } else {
             lastHeldRadioChannel.remove(player.getUniqueId());
         }
+
+        // Ensure no stored radios are left in ON stage.
+        plugin.normalizeRadiosForStorage(player);
+
+        // Ensure visuals are normalized immediately (some IA packs default to the last texture).
+        plugin.runNextTick(() -> plugin.refreshHotbarVisualsAssumeInactive(player));
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         plugin.normalizeTalkingVariantInMainHand(event.getPlayer(), true);
+        plugin.releaseBusyLineIfOwned(event.getPlayer().getUniqueId());
         plugin.getRadioState().clear(event.getPlayer().getUniqueId());
         plugin.clearTransmitCache(event.getPlayer().getUniqueId());
         plugin.clearPermissionCache(event.getPlayer().getUniqueId());
+        plugin.clearPreferredListenChannel(event.getPlayer().getUniqueId());
         lastHeldRadioChannel.remove(event.getPlayer().getUniqueId());
     }
 
     @EventHandler
     public void onKick(PlayerKickEvent event) {
         plugin.normalizeTalkingVariantInMainHand(event.getPlayer(), true);
+        plugin.releaseBusyLineIfOwned(event.getPlayer().getUniqueId());
         plugin.getRadioState().clear(event.getPlayer().getUniqueId());
         plugin.clearTransmitCache(event.getPlayer().getUniqueId());
         plugin.clearPermissionCache(event.getPlayer().getUniqueId());
+        plugin.clearPreferredListenChannel(event.getPlayer().getUniqueId());
         lastHeldRadioChannel.remove(event.getPlayer().getUniqueId());
     }
 
@@ -76,9 +96,11 @@ public final class RadioListeners implements Listener {
         // Swapping hands (default key: F) does not fire hotbar change events, so we must refresh caches here.
         Player player = event.getPlayer();
         plugin.runNextTick(() -> {
+            plugin.normalizeRadiosForStorage(player);
             plugin.getRadioState().refreshHotbar(player);
             plugin.refreshTransmitCache(player);
             plugin.refreshPermissionCache(player);
+            plugin.refreshPreferredListenChannel(player);
 
             // Keep internal tracking consistent (used for hotbar switch sounds only).
             RadioChannel inHand = itemUtil.getChannel(player.getInventory().getItemInMainHand());
@@ -96,11 +118,97 @@ public final class RadioListeners implements Listener {
             return;
         }
 
+        // Immediate normalization: never allow an ON-stage radio to be moved around inventories.
+        // (Main-hand visual ON is handled by the UI task; when you click/move items, we force OFF.)
+        try {
+            var current = event.getCurrentItem();
+            var cursor = event.getCursor();
+            if (itemUtil.isRadio(current)) {
+                var normalized = plugin.normalizeTalkingVariantToBase(current);
+                if (normalized != null) {
+                    event.setCurrentItem(normalized);
+                }
+            }
+            if (itemUtil.isRadio(cursor)) {
+                var normalized = plugin.normalizeTalkingVariantToBase(cursor);
+                if (normalized != null) {
+                    event.getView().setCursor(normalized);
+                }
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+
+        // Block any attempt to drop an ACTIVE radio (slot-drop or cursor-drop).
+        try {
+            ClickType click = event.getClick();
+            InventoryAction action = event.getAction();
+            boolean isDrop = click == ClickType.DROP
+                    || click == ClickType.CONTROL_DROP
+                    || action == InventoryAction.DROP_ALL_CURSOR
+                    || action == InventoryAction.DROP_ONE_CURSOR
+                    || action == InventoryAction.DROP_ALL_SLOT
+                    || action == InventoryAction.DROP_ONE_SLOT;
+
+            if (isDrop) {
+                var current = event.getCurrentItem();
+                var cursor = event.getCursor();
+                boolean activeRadio = plugin.isRadioOnStage(current) || plugin.isRadioOnStage(cursor);
+                boolean txUi = plugin.isTransmitUiActive(player.getUniqueId());
+                boolean anyRadio = itemUtil.isRadio(current) || itemUtil.isRadio(cursor);
+
+                if (activeRadio || (txUi && anyRadio)) {
+                    event.setCancelled(true);
+                    plugin.runNextTick(() -> plugin.normalizeTalkingVariantInMainHand(player, true));
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+
         // Any inventory change: refresh cached hotbar next tick
         plugin.runNextTick(() -> {
+            plugin.normalizeRadiosForStorage(player);
             plugin.getRadioState().refreshHotbar(player);
             plugin.refreshTransmitCache(player);
             plugin.refreshPermissionCache(player);
+            plugin.refreshPreferredListenChannel(player);
+        });
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
+    public void onInventoryCreative(InventoryCreativeEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+
+        // Creative can create/clone items; ensure any radio involved is OFF.
+        try {
+            var current = event.getCurrentItem();
+            var cursor = event.getCursor();
+            if (itemUtil.isRadio(current)) {
+                var normalized = plugin.normalizeTalkingVariantToBase(current);
+                if (normalized != null) {
+                    event.setCurrentItem(normalized);
+                }
+            }
+            if (itemUtil.isRadio(cursor)) {
+                var normalized = plugin.normalizeTalkingVariantToBase(cursor);
+                if (normalized != null) {
+                    event.getView().setCursor(normalized);
+                }
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+
+        plugin.runNextTick(() -> {
+            plugin.normalizeRadiosForStorage(player);
+            plugin.getRadioState().refreshHotbar(player);
+            plugin.refreshTransmitCache(player);
+            plugin.refreshPermissionCache(player);
+            plugin.refreshPreferredListenChannel(player);
         });
     }
 
@@ -110,18 +218,73 @@ public final class RadioListeners implements Listener {
             return;
         }
 
+        // Immediate normalization isn't reliable for drag events; normalize next tick.
+
         plugin.runNextTick(() -> {
+            plugin.normalizeRadiosForStorage(player);
             plugin.getRadioState().refreshHotbar(player);
             plugin.refreshTransmitCache(player);
             plugin.refreshPermissionCache(player);
+            plugin.refreshPreferredListenChannel(player);
         });
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
+    public void onInventoryOpen(InventoryOpenEvent event) {
+        if (!(event.getPlayer() instanceof Player player)) {
+            return;
+        }
+        plugin.runNextTick(() -> plugin.normalizeRadiosForStorage(player));
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
+    public void onInventoryClose(InventoryCloseEvent event) {
+        if (!(event.getPlayer() instanceof Player player)) {
+            return;
+        }
+        plugin.runNextTick(() -> plugin.normalizeRadiosForStorage(player));
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
+    public void onInventoryMoveItem(InventoryMoveItemEvent event) {
+        try {
+            var item = event.getItem();
+            if (itemUtil.isRadio(item)) {
+                // Hoppers/automation must never move ON-stage radios.
+                var normalized = plugin.normalizeTalkingVariantToBase(item);
+                if (normalized != null) {
+                    event.setItem(normalized);
+                }
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
     public void onDrop(PlayerDropItemEvent event) {
         Player player = event.getPlayer();
 
-        // Prevent leaving behind the "talking" variant on the ground.
+        // Never allow dropping an ACTIVE radio.
+        try {
+            var entity = event.getItemDrop();
+            if (entity != null) {
+                var stack = entity.getItemStack();
+                if (itemUtil.isRadio(stack)) {
+                    boolean activeRadio = plugin.isRadioOnStage(stack);
+                    boolean txUi = plugin.isTransmitUiActive(player.getUniqueId());
+                    if (activeRadio || txUi) {
+                        event.setCancelled(true);
+                        plugin.runNextTick(() -> plugin.normalizeTalkingVariantInMainHand(player, true));
+                        return;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+
+        // Prevent leaving behind any "active" visual state on the ground.
         try {
             var entity = event.getItemDrop();
             if (entity != null) {
@@ -136,10 +299,69 @@ public final class RadioListeners implements Listener {
         }
 
         plugin.runNextTick(() -> {
+            plugin.normalizeRadiosForStorage(player);
             plugin.getRadioState().refreshHotbar(player);
             plugin.refreshTransmitCache(player);
             plugin.refreshPermissionCache(player);
+            plugin.refreshPreferredListenChannel(player);
         });
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onDeath(PlayerDeathEvent event) {
+        // Death drops can't be cancelled reliably; ensure radios are always OFF in drops.
+        try {
+            var drops = event.getDrops();
+            for (int i = 0; i < drops.size(); i++) {
+                var stack = drops.get(i);
+                var normalized = plugin.normalizeTalkingVariantToBase(stack);
+                if (normalized != null) {
+                    drops.set(i, normalized);
+                }
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
+    public void onPickup(EntityPickupItemEvent event) {
+        // Ensure picked-up radios are never ON.
+        try {
+            var entity = event.getEntity();
+            if (!(entity instanceof Player)) {
+                return;
+            }
+            var itemEntity = event.getItem();
+            if (itemEntity == null) {
+                return;
+            }
+            var stack = itemEntity.getItemStack();
+            var normalized = plugin.normalizeTalkingVariantToBase(stack);
+            if (normalized != null) {
+                itemEntity.setItemStack(normalized);
+                return;
+            }
+            // If it's a radio but no normalization change was needed, it's already safe.
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
+    public void onDispense(BlockDispenseEvent event) {
+        // Dispensers can "drop" items from storage; ensure radios dispensed are OFF.
+        try {
+            var item = event.getItem();
+            var normalized = plugin.normalizeTalkingVariantToBase(item);
+            if (normalized != null) {
+                event.setItem(normalized);
+                return;
+            }
+            // If it's a radio but no normalization change was needed, it's already safe.
+        } catch (Throwable ignored) {
+            // best-effort
+        }
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
@@ -149,6 +371,10 @@ public final class RadioListeners implements Listener {
             plugin.getRadioState().refreshHotbar(player);
             plugin.refreshTransmitCache(player);
             plugin.refreshPermissionCache(player);
+            plugin.refreshPreferredListenChannel(player);
+
+            // Visuals: holding a radio must remain OFF (_0) until real SVC mic packets occur.
+            plugin.refreshHotbarVisualsAssumeInactive(player);
 
             // Play a single click sound when switching to a radio / between radio channels.
             RadioChannel nowInHand = itemUtil.getChannel(player.getInventory().getItemInMainHand());

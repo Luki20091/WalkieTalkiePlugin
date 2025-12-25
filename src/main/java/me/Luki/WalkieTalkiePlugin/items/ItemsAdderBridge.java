@@ -21,6 +21,8 @@ public final class ItemsAdderBridge {
 
     private final Method getItemStack;
 
+    private final Method getCustomModelData;
+
     public ItemsAdderBridge() {
         Class<?> cls = null;
         Method byItem = null;
@@ -29,6 +31,7 @@ public final class ItemsAdderBridge {
         Method instS = null;
         Method instSI = null;
         Method itemStack = null;
+        Method cmd = null;
 
         boolean ok = false;
         try {
@@ -46,6 +49,9 @@ public final class ItemsAdderBridge {
 
             itemStack = findMethod(cls, "getItemStack");
 
+            // Some IA versions expose base model data directly on CustomStack.
+            cmd = findAnyMethod(cls, "getCustomModelData", "getCustomModelDataId", "getModelData", "getCustomModelDataValue");
+
             ok = (byItem != null) && (itemStack != null) && (instS != null || instSI != null);
         } catch (ClassNotFoundException ignored) {
             ok = false;
@@ -60,6 +66,8 @@ public final class ItemsAdderBridge {
         this.getInstanceString = instS;
         this.getInstanceStringInt = instSI;
         this.getItemStack = itemStack;
+
+        this.getCustomModelData = cmd;
     }
 
     public boolean isAvailable() {
@@ -119,6 +127,45 @@ public final class ItemsAdderBridge {
             return null;
         } catch (Throwable ignored) {
             return null;
+        }
+    }
+
+    /**
+     * Best-effort: returns the base CustomModelData for an ItemsAdder custom item id.
+     * This is more reliable than reading CMD from the returned ItemStack, because some
+     * server setups or IA versions may return a non-default visual stage.
+     */
+    public int getBaseCustomModelData(String id) {
+        if (!available || id == null || id.isBlank() || getCustomModelData == null) {
+            return 0;
+        }
+        try {
+            Object customStack;
+            if (getInstanceStringInt != null) {
+                customStack = getInstanceStringInt.invoke(null, id, 1);
+            } else {
+                customStack = getInstanceString.invoke(null, id);
+            }
+            if (customStack == null) {
+                return 0;
+            }
+            Object v = getCustomModelData.invoke(customStack);
+            if (v instanceof Integer i) {
+                return i;
+            }
+            if (v instanceof Number n) {
+                return n.intValue();
+            }
+            if (v != null) {
+                try {
+                    return Integer.parseInt(String.valueOf(v).trim());
+                } catch (NumberFormatException ignored) {
+                    return 0;
+                }
+            }
+            return 0;
+        } catch (Throwable ignored) {
+            return 0;
         }
     }
 

@@ -12,6 +12,9 @@ dev: true
 svc:
   enabled: true
   logHook: true
+  # DEV-only: allow hearing yourself on radio for debugging routing.
+  # Works only if `dev: true` AND this flag is true.
+  hearSelfInDev: false
   # Voice Chat UDP port (informational only; real port is configured in voicechat-server.properties)
   port: 24454
   # If true, radio/proximity override will only apply within the same world.
@@ -23,6 +26,15 @@ svc:
   # SVC proximity voice can handle it.
   # Set to 0 to always deliver radio.
   radioMinDistanceBlocks: 100.0
+  # Make radio audio slightly positional to give a subtle attenuation/"fade" effect.
+  # Implementation: sends radio as a LocationalSoundPacket positioned a few blocks towards the sender.
+  radioSpatial:
+    enabled: true
+    # How far from the receiver the perceived source is placed (towards the sender)
+    offsetBlocks: 5.0
+    # Max hearing distance for the locational packet (must be > offsetBlocks)
+    distanceBlocks: 8.0
+
 
 # ItemsAdder IDs (uzupełnimy później). Przykład formatu: "namespace:item_name"
 # Uwaga: radio-itemy będą bazować na "disc fragment".
@@ -36,6 +48,14 @@ radios:
 
 # Feedback sound when starting/stopping radio transmit
 sounds:
+  # Dedicated sound for starting radio transmit (separate from generic sounds.start)
+  transmitStart:
+    enabled: true
+    # Block placement sound by default
+    sound: "block.azalea_leaves.hit"
+    volume: 0.2
+    pitch: 0.6
+
   start:
     enabled: true
     sound: "block.sand.place"
@@ -48,14 +68,14 @@ sounds:
     pitch: 0.1
   # Played once when switching to a radio / between radios in hotbar
   switch:
-    enabled: true
+    enabled: false
     sound: "block.sand.place"
     volume: 0.8
     pitch: 0.8
 
   # Played once when putting away a radio (switching away from a radio)
   holster:
-    enabled: true
+    enabled: false
     sound: "block.sand.place"
     volume: 1.0
     pitch: 0.1
@@ -63,22 +83,75 @@ sounds:
   # Subtle loop/pulse for a "radio filter" feeling while transmitting (PTT active)
   # This plays locally to the sender only.
   filterLoop:
-    enabled: true
+    enabled: false
     # Mode:
     # - ALWAYS: play while holding a transmit-capable radio
     # - PTT: play only shortly after mic packets (while actively speaking)
     mode: "PTT"
     # How long after last mic packet we still consider the player "actively transmitting"
-    activeForMs: 350
+    activeForMs: 10
     # How often to play the pulse (ticks)
-    everyTicks: 20
+    everyTicks: 10
+
+    # One pulse can play multiple sounds (played in order)
+    sounds:
+      - sound: "ambient.weather.rain"
+        volume: 0.04
+        pitch: 1.8
+      - sound: "block.sand.idle"
+        volume: 1.0
+        pitch: 2.8
+
+    # Legacy single-sound format (used if `sounds:` list is missing)
     sound: "ambient.weather.rain"
     volume: 0.04
     pitch: 1.8
 
+  # Alternative to filterLoop: play one long custom resource-pack sound while transmitting.
+  # IMPORTANT:
+  # - Resource packs do NOT support mp3; use .ogg.
+  # - "sound" here is a sound EVENT key from your resource pack (or ItemsAdder), e.g. "radio:filter_long".
+  # - Stopping is best-effort: with SVC PTT there is no explicit "PTT up" event.
+  filterLong:
+    enabled: true
+    sound: "radio:filter_long"
+    volume: 1.0
+    pitch: 1.0
+
+  # Played when channel is busy (someone else is transmitting)
+  busy:
+    enabled: true
+    sound: "block.note_block.bass"
+    volume: 0.7
+    pitch: 0.9
+
+# Visual staging (ItemsAdder textures order: _0 OFF, _1 TRANSMIT, _2 LISTEN)
+visuals:
+  transmit:
+    enabled: true
+  listen:
+    enabled: true
+    # How long we keep LISTEN stage after last received radio packet
+    activeForMs: 300
+
+# Prevent overlapping voices: only 1 transmitter per channel at a time
+radio:
+  # Scope for radio routing + busy-line locking:
+  # - WORLD (default): transmit/receive per-world like SVC normally behaves
+  # - GLOBAL: allow cross-world radio (if SVC delivers events) and avoid retaining world tokens in locks
+  scope: "WORLD"
+  busyLine:
+    enabled: true
+    # If no packets arrive for this long, the line is considered free again
+    timeoutMs: 350
+    # Rate-limit the "busy" hint to the sender
+    hintCooldownMs: 750
+
 commands:
   messages:
     prefix: "&8[&bWT&8]&r "
+    # /walkietalkie usage text
+    usage: "&7Użycie: /{label} <reload|info>"
     noPermission: "&cBrak permisji."
     reloaded: "&aPrzeładowano konfigurację."
     info:
@@ -86,6 +159,9 @@ commands:
       - "&7SVC: &f{svcEnabled} &7worldOnly: &f{sameWorldOnly}"
       - "&7radioMinDistance: &f{radioMinDistance}"
       - "&7voicePort: &f{svcPort}"
+      # Extra placeholders you can use in any line:
+      # - {svcHooked}
+      # - {radioScope}
 
 # ActionBar notifications (all optional)
 notifications:
@@ -96,6 +172,9 @@ notifications:
     stop:
       enabled: true
       actionBar: "&cKoniec nadawania"
+    busy:
+      enabled: true
+      actionBar: "&eLinia zajęta - poczekaj"
   eavesdrop:
     start:
       enabled: true

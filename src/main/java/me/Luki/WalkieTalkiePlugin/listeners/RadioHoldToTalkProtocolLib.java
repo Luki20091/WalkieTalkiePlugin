@@ -111,7 +111,9 @@ public final class RadioHoldToTalkProtocolLib {
         }
 
         plugin.getRadioState().setTransmitting(player.getUniqueId(), channel);
-        plugin.playFeedbackSound(player, "sounds.start");
+        plugin.setHoldToTalkActive(player.getUniqueId(), true);
+        plugin.maybePlayFilterLoopPulseNow(player);
+        plugin.playTransmitStartSound(player);
         plugin.playConfiguredNotification(player, "notifications.transmit.start");
     }
 
@@ -142,6 +144,7 @@ public final class RadioHoldToTalkProtocolLib {
         }
 
         if (changed) {
+            plugin.setHoldToTalkActive(player.getUniqueId(), false);
             plugin.playFeedbackSound(player, "sounds.stop");
             if (previousTransmit != null) {
                 plugin.playConfiguredNotification(player, "notifications.transmit.stop");
@@ -149,6 +152,9 @@ public final class RadioHoldToTalkProtocolLib {
             if (previousEavesdropTarget != null) {
                 plugin.playConfiguredNotification(player, "notifications.eavesdrop.stop");
             }
+
+            // Packet listeners may run off-thread; enforce main-thread inventory/UI updates.
+            plugin.runNextTick(() -> plugin.forceStopTransmitVisuals(player));
         }
     }
 }

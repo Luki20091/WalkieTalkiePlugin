@@ -25,7 +25,7 @@ public final class WalkieTalkieCommand implements CommandExecutor, TabCompleter 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
-            send(sender, prefix() + "&7Użycie: /" + label + " <reload|info>");
+            send(sender, prefix() + usage(label));
             return true;
         }
 
@@ -51,15 +51,25 @@ public final class WalkieTalkieCommand implements CommandExecutor, TabCompleter 
                 boolean sameWorldOnly = plugin.getConfig().getBoolean("svc.sameWorldOnly", true);
                 double radioMinDistance = plugin.getConfig().getDouble("svc.radioMinDistanceBlocks", 20.0);
                 int svcPort = plugin.getConfig().getInt("svc.port", 24454);
+                boolean svcHooked = false;
+                try {
+                    VoiceBridge bridge = plugin.getVoicechatBridge();
+                    svcHooked = bridge != null && bridge.isHooked();
+                } catch (Throwable ignored) {
+                    svcHooked = false;
+                }
+                String radioScope = plugin.isRadioGlobalScope() ? "GLOBAL" : "WORLD";
 
                 List<String> lines = plugin.getConfig().getStringList("commands.messages.info");
                 if (lines == null || lines.isEmpty()) {
-                    send(sender, prefix() + "&bWalkieTalkiePlugin &7v" + version);
-                    send(sender, prefix() + "&7SVC: &f" + svcEnabled + " &7worldOnly: &f" + sameWorldOnly);
-                    send(sender, prefix() + "&7radioMinDistance: &f" + radioMinDistance);
-                    VoiceBridge bridge = plugin.getVoicechatBridge();
-                    send(sender, prefix() + "&7SVC hook: &f" + (bridge != null && bridge.isHooked()));
-                    return true;
+                    lines = List.of(
+                        "&bWalkieTalkiePlugin &7v{version}",
+                        "&7SVC: &f{svcEnabled} &7worldOnly: &f{sameWorldOnly}",
+                        "&7radioMinDistance: &f{radioMinDistance}",
+                        "&7voicePort: &f{svcPort}",
+                        "&7SVC hook: &f{svcHooked}",
+                        "&7radioScope: &f{radioScope}"
+                    );
                 }
 
                 for (String raw : lines) {
@@ -71,13 +81,15 @@ public final class WalkieTalkieCommand implements CommandExecutor, TabCompleter 
                         .replace("{svcEnabled}", String.valueOf(svcEnabled))
                         .replace("{sameWorldOnly}", String.valueOf(sameWorldOnly))
                         .replace("{radioMinDistance}", String.valueOf(radioMinDistance))
-                        .replace("{svcPort}", String.valueOf(svcPort));
+                        .replace("{svcPort}", String.valueOf(svcPort))
+                        .replace("{svcHooked}", String.valueOf(svcHooked))
+                        .replace("{radioScope}", String.valueOf(radioScope));
                     send(sender, prefix() + rendered);
                 }
                 return true;
             }
             default -> {
-                send(sender, prefix() + "&7Użycie: /" + label + " <reload|info>");
+                send(sender, prefix() + usage(label));
                 return true;
             }
         }
@@ -105,6 +117,14 @@ public final class WalkieTalkieCommand implements CommandExecutor, TabCompleter 
 
     private String noPermission() {
         return plugin.getConfig().getString("commands.messages.noPermission", "&cBrak permisji.");
+    }
+
+    private String usage(String label) {
+        String raw = plugin.getConfig().getString("commands.messages.usage", "&7Użycie: /{label} <reload|info>");
+        if (raw == null) {
+            raw = "";
+        }
+        return raw.replace("{label}", label == null ? "walkietalkie" : label);
     }
 
     private void send(CommandSender sender, String message) {

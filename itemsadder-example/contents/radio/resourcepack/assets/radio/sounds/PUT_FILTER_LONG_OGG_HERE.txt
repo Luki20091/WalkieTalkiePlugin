@@ -1,0 +1,11 @@
+Put your long sound file here as:
+
+  filter_long.ogg
+
+Notes:
+- Minecraft/ItemsAdder resource packs do NOT support .mp3; use .ogg (Vorbis).
+- This sound is referenced by assets/radio/sounds.json as the event key:
+
+  radio:filter_long
+
+- After placing the file, run ItemsAdder reload/generate as you normally do.

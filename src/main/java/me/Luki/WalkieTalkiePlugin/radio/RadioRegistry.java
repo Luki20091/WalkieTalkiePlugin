@@ -26,21 +26,39 @@ public final class RadioRegistry {
         register(radiosSection, RadioChannel.HANDLARZE, "Radio Handlarzy", "handlarze");
         register(radiosSection, RadioChannel.PIRACI, "Radio Piratów", "piraci");
         register(radiosSection, RadioChannel.TOHANDLARZE, "Radio Do Handlarzy", "tohandlarze");
-        register(radiosSection, RadioChannel.PIRACI_RANDOM, "Stare Czarne Radio Piratów", "piraci_random");
+        register(radiosSection, RadioChannel.PIRACI_RANDOM, "Stare Radio Piratów", "piraci_random");
 
         for (RadioDefinition def : definitions.values()) {
             String id = def.itemsAdderId();
             if (id == null || id.isBlank()) {
                 continue;
             }
-            String baseId = id.trim();
-            itemsAdderIdToChannel.put(baseId.toLowerCase(Locale.ROOT), def.channel());
+            String raw = id.trim();
 
-            // Allow an optional "talking" texture variant while transmitting.
-            // Convention: <namespace>:<item>_1
-            String talkingId = baseId + "_1";
-            itemsAdderIdToChannel.put(talkingId.toLowerCase(Locale.ROOT), def.channel());
+            // Version 2 convention: separate ItemsAdder items for stages.
+            // Support both:
+            // - base id:   radio:radio_czerwoni (OFF)
+            // - staged id: radio:radio_czerwoni_0 (OFF)
+            // In both cases, we accept _0/_1/_2 as the same channel.
+            String base = stripStageSuffix(raw);
+
+            itemsAdderIdToChannel.put(raw.toLowerCase(Locale.ROOT), def.channel());
+            itemsAdderIdToChannel.put(base.toLowerCase(Locale.ROOT), def.channel());
+            itemsAdderIdToChannel.put((base + "_0").toLowerCase(Locale.ROOT), def.channel());
+            itemsAdderIdToChannel.put((base + "_1").toLowerCase(Locale.ROOT), def.channel());
+            itemsAdderIdToChannel.put((base + "_2").toLowerCase(Locale.ROOT), def.channel());
         }
+    }
+
+    private static String stripStageSuffix(String id) {
+        if (id == null) {
+            return "";
+        }
+        String s = id.trim();
+        if (s.endsWith("_0") || s.endsWith("_1") || s.endsWith("_2")) {
+            return s.substring(0, s.length() - 2);
+        }
+        return s;
     }
 
     private void register(ConfigurationSection section, RadioChannel channel, String name, String key) {
