@@ -29,6 +29,7 @@ import java.util.UUID;
 import java.lang.reflect.Field;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.Set;
 
 import static me.Luki.WalkieTalkiePlugin.radio.RadioItemKeys.channelKey;
 
@@ -118,9 +119,13 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     private final Map<BusyLineKey, BusyLine> busyLineByChannel = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastBusyHintAtMs = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastNoTransmitHintAtMs = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastNoListenHintAtMs = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastNoAccessHintAtMs = new ConcurrentHashMap<>();
     private volatile boolean busyLineEnabled;
     private volatile long busyLineTimeoutMs;
     private volatile long busyLineHintCooldownMs;
+    private volatile long permissionHintCooldownMs;
 
     private volatile RadioScope radioScope = RadioScope.WORLD;
 
@@ -145,6 +150,12 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     private final AtomicLong dbgMicNotAllowedCancelled = new AtomicLong();
     private final AtomicLong dbgMicWithinMinDistanceProx = new AtomicLong();
     private final AtomicLong dbgMicRadioSent = new AtomicLong();
+
+    // Off-thread safe list of online players. Updated on main thread in listeners.
+    private final Set<UUID> onlinePlayerUuids = ConcurrentHashMap.newKeySet();
+
+    // Debug/repair: if a receiver is denied due to stale caches, refresh their caches at most once per interval.
+    private final Map<UUID, Long> lastDeniedCacheRefreshAtMs = new ConcurrentHashMap<>();
 
     private final LegacyComponentSerializer legacy = LegacyComponentSerializer.legacySection();
 
@@ -182,6 +193,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
             // Populate caches for already-online players (e.g. plugin reload while players are online)
             getServer().getOnlinePlayers().forEach(p -> {
+                onlinePlayerUuids.add(p.getUniqueId());
                 radioState.refreshHotbar(p);
                 refreshTransmitCache(p);
                 refreshPermissionCache(p);
@@ -261,7 +273,27 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         holdToTalkActive.clear();
 
+        onlinePlayerUuids.clear();
+
         getLogger().info("WalkieTalkiePlugin v" + version + " disabled.");
+    }
+
+    public void markPlayerOnline(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+        onlinePlayerUuids.add(uuid);
+    }
+
+    public void markPlayerOffline(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+        onlinePlayerUuids.remove(uuid);
+    }
+
+    public Set<UUID> getOnlinePlayerUuids() {
+        return onlinePlayerUuids;
     }
 
     public void setVoicechatBridge(VoiceBridge bridge) {
@@ -592,7 +624,9 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         // Pirate eavesdrop: receiver listens to a random chosen channel while holding pirate radio.
         RadioChannel eavesdropTarget = radioState != null ? radioState.getEavesdroppingChannel(receiverUuid) : null;
         if (eavesdropTarget != null && eavesdropTarget == transmitting) {
-            return snapshot.hasPirateRandomUse;
+            // Require both: permission to use pirate eavesdrop feature AND permission to listen to the target channel.
+            // This prevents eavesdrop from bypassing per-channel listen permissions.
+            return snapshot.hasPirateRandomUse && snapshot.hasListenPermission(transmitting);
         }
 
         if (!snapshot.hasListenPermission(transmitting)) {
@@ -609,6 +643,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         UUID uuid = player.getUniqueId();
         int heldSlot = player.getInventory().getHeldItemSlot();
         RadioChannel selected = null;
+        RadioChannel firstDeniedListen = null;
 
         for (int slot = 0; slot < 9; slot++) {
             if (slot == heldSlot) {
@@ -621,10 +656,17 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             }
             // Only select channels the player can actually listen to.
             if (!player.hasPermission(channel.listenPermission())) {
+                if (firstDeniedListen == null) {
+                    firstDeniedListen = channel;
+                }
                 continue;
             }
             selected = channel;
             break;
+        }
+
+        if (selected == null && firstDeniedListen != null) {
+            maybeNotifyNoListen(player, firstDeniedListen);
         }
 
         if (selected == null) {
@@ -652,7 +694,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                 listenMask |= (1 << c.ordinal());
             }
         }
-        boolean pirateRandomUse = player.hasPermission(RadioChannel.PIRACI_RANDOM.usePermission());
+        boolean pirateRandomUse = player.hasPermission(RadioChannel.PIRACI_RANDOM.listenPermission());
         permissionSnapshots.put(player.getUniqueId(), new PermissionSnapshot(listenMask, pirateRandomUse));
     }
 
@@ -818,6 +860,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         this.busyLineTimeoutMs = Math.max(100L, getConfig().getLong("radio.busyLine.timeoutMs", 350L));
         this.busyLineHintCooldownMs = Math.max(100L, getConfig().getLong("radio.busyLine.hintCooldownMs", 750L));
 
+        this.permissionHintCooldownMs = Math.max(250L, getConfig().getLong("notifications.permissions.cooldownMs", 1500L));
+
         this.listenVisualsEnabled = getConfig().getBoolean("visuals.listen.enabled", true);
         this.listenVisualActiveForMs = Math.max(100L, getConfig().getLong("visuals.listen.activeForMs", 300L));
 
@@ -931,6 +975,45 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         getLogger().info("[WT-DEBUG] " + message);
     }
 
+    public String debugGetMicCountersLine() {
+        return "micEvents=" + dbgMicEvents.get()
+            + " noSender=" + dbgMicNoSender.get()
+            + " noReceiver=" + dbgMicNoReceiver.get()
+            + " noTxChannel=" + dbgMicNoTransmitChannel.get()
+            + " crossWorldCancel=" + dbgMicCrossWorldCancelled.get()
+            + " notAllowedCancel=" + dbgMicNotAllowedCancelled.get()
+            + " withinMinDistanceProx=" + dbgMicWithinMinDistanceProx.get()
+            + " radioSent=" + dbgMicRadioSent.get();
+    }
+
+    public String debugExplainListenDecision(UUID receiverUuid, RadioChannel transmitting) {
+        if (receiverUuid == null || transmitting == null) {
+            return "receiverUuid/transmitting is null";
+        }
+
+        RadioChannel preferred = preferredListenChannelByPlayer.get(receiverUuid);
+        boolean preferredBlocks = preferred != null && preferred != transmitting;
+
+        PermissionSnapshot snapshot = permissionSnapshots.get(receiverUuid);
+        boolean hasSnapshot = snapshot != null;
+
+        RadioChannel eavesdropTarget = radioState != null ? radioState.getEavesdroppingChannel(receiverUuid) : null;
+        boolean isEavesdropMatch = eavesdropTarget != null && eavesdropTarget == transmitting;
+
+        boolean hasListenPerm = snapshot != null && snapshot.hasListenPermission(transmitting);
+        boolean hasHotbarRadio = radioState != null && radioState.hasHotbarRadio(receiverUuid, transmitting);
+        boolean pirateRandomAllowed = snapshot != null && snapshot.hasPirateRandomUse;
+
+        return "preferred=" + (preferred == null ? "<none>" : preferred.id())
+            + " preferredBlocks=" + preferredBlocks
+            + " snapshot=" + hasSnapshot
+            + " listenPerm=" + hasListenPerm
+            + " hotbarRadio=" + hasHotbarRadio
+            + " eavesdropTarget=" + (eavesdropTarget == null ? "<none>" : eavesdropTarget.id())
+            + " eavesdropMatch=" + isEavesdropMatch
+            + " pirateRandomAllowed=" + pirateRandomAllowed;
+    }
+
     // Called from VoicechatBridge (may be off-thread)
     public void debugMicEventCounted() {
         dbgMicEvents.incrementAndGet();
@@ -962,6 +1045,44 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     }
 
     // Called from VoicechatBridge (may be off-thread)
+    public void debugMicNotAllowedCancelled(UUID senderUuid, UUID receiverUuid, RadioChannel transmitting) {
+        dbgMicNotAllowedCancelled.incrementAndGet();
+        if (senderUuid == null || receiverUuid == null || transmitting == null) {
+            return;
+        }
+        debugLog(
+            "mic:notAllowed:" + receiverUuid + ":" + transmitting.id(),
+            "Denied radio delivery sender=" + senderUuid
+                + " receiver=" + receiverUuid
+                + " tx=" + transmitting.id()
+                + " :: " + debugExplainListenDecision(receiverUuid, transmitting)
+        );
+
+        // Best-effort self-heal: receiver caches might be stale if an inventory event was missed.
+        // Refresh hotbar/permissions/selection on next tick, rate-limited.
+        long now = System.currentTimeMillis();
+        Long last = lastDeniedCacheRefreshAtMs.get(receiverUuid);
+        if (last == null || (now - last) >= 750L) {
+            lastDeniedCacheRefreshAtMs.put(receiverUuid, now);
+            runNextTick(() -> {
+                Player p = getServer().getPlayer(receiverUuid);
+                if (p == null) {
+                    return;
+                }
+                try {
+                    if (radioState != null) {
+                        radioState.refreshHotbar(p);
+                    }
+                    refreshPermissionCache(p);
+                    refreshPreferredListenChannel(p);
+                } catch (Throwable ignored) {
+                    // best-effort
+                }
+            });
+        }
+    }
+
+    // Called from VoicechatBridge (may be off-thread)
     public void debugMicWithinMinDistanceProx() {
         dbgMicWithinMinDistanceProx.incrementAndGet();
     }
@@ -990,6 +1111,26 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         }
 
         int heldSlot = player.getInventory().getHeldItemSlot();
+
+        int listenSlot = -1;
+        if (listenActive && listenChannel != null) {
+            for (int slot = 0; slot < 9; slot++) {
+                ItemStack stack = player.getInventory().getItem(slot);
+                RadioChannel itemChannel = itemUtil.getChannel(stack);
+                if (itemChannel == null || itemChannel != listenChannel) {
+                    continue;
+                }
+
+                // Don't steal visuals from an active transmit item.
+                if (txActive && txChannel != null && slot == heldSlot && itemChannel == txChannel) {
+                    continue;
+                }
+
+                listenSlot = slot;
+                break;
+            }
+        }
+
         boolean anyChanged = false;
         for (int slot = 0; slot < 9; slot++) {
             ItemStack stack = player.getInventory().getItem(slot);
@@ -1001,7 +1142,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             RadioVisualStage desired;
             if (txActive && txChannel != null && slot == heldSlot && itemChannel == txChannel) {
                 desired = RadioVisualStage.TRANSMIT;
-            } else if (listenActive && listenChannel != null && itemChannel == listenChannel) {
+            } else if (listenSlot >= 0 && slot == listenSlot) {
                 desired = RadioVisualStage.LISTEN;
             } else {
                 desired = RadioVisualStage.OFF;
@@ -1382,6 +1523,12 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         }
 
         if (!player.hasPermission(channel.usePermission())) {
+            boolean hasListen = player.hasPermission(channel.listenPermission());
+            if (hasListen) {
+                maybeNotifyNoTransmit(player, channel);
+            } else {
+                maybeNotifyNoAccess(player, channel);
+            }
             if (debugEnabled) {
                 debugLog("noTxPerm:" + uuid, "Missing use permission for channel=" + channel.id() + " perm=" + channel.usePermission());
             }
@@ -1606,6 +1753,49 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         // Per user requirement: use ActionBar only (no Title/Subtitle)
         player.sendActionBar(legacy.deserialize(translateLegacyColors(actionBar)));
+    }
+
+    public void maybeNotifyNoTransmit(Player player, RadioChannel channel) {
+        maybeNotifyPermission(player, channel, "notifications.permissions.noTransmit", lastNoTransmitHintAtMs);
+    }
+
+    public void maybeNotifyNoListen(Player player, RadioChannel channel) {
+        if (player != null && channel != null && !player.hasPermission(channel.usePermission())) {
+            maybeNotifyNoAccess(player, channel);
+            return;
+        }
+        maybeNotifyPermission(player, channel, "notifications.permissions.noListen", lastNoListenHintAtMs);
+    }
+
+    public void maybeNotifyNoAccess(Player player, RadioChannel channel) {
+        maybeNotifyPermission(player, channel, "notifications.permissions.noAccess", lastNoAccessHintAtMs);
+    }
+
+    private void maybeNotifyPermission(Player player, RadioChannel channel, String path, Map<UUID, Long> lastMap) {
+        if (player == null || channel == null || path == null || path.isBlank() || lastMap == null) {
+            return;
+        }
+
+        long nowMs = System.currentTimeMillis();
+        UUID uuid = player.getUniqueId();
+        Long last = lastMap.get(uuid);
+        if (last != null && (nowMs - last) < permissionHintCooldownMs) {
+            return;
+        }
+        lastMap.put(uuid, nowMs);
+
+        boolean enabled = getConfig().getBoolean(path + ".enabled", true);
+        if (!enabled) {
+            return;
+        }
+
+        String raw = getConfig().getString(path + ".actionBar", "");
+        if (raw == null || raw.isBlank()) {
+            return;
+        }
+
+        String msg = raw.replace("{channel}", channel.id());
+        player.sendActionBar(legacy.deserialize(translateLegacyColors(msg)));
     }
 
     private String translateLegacyColors(String input) {

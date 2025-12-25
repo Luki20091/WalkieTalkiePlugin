@@ -46,6 +46,8 @@ public final class RadioListeners implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
 
+        plugin.markPlayerOnline(player.getUniqueId());
+
         // If the player logged out while transmitting, ensure we don't keep the "talking" texture.
         plugin.normalizeTalkingVariantInMainHand(player, true);
 
@@ -70,6 +72,7 @@ public final class RadioListeners implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
+        plugin.markPlayerOffline(event.getPlayer().getUniqueId());
         plugin.normalizeTalkingVariantInMainHand(event.getPlayer(), true);
         plugin.releaseBusyLineIfOwned(event.getPlayer().getUniqueId());
         plugin.getRadioState().clear(event.getPlayer().getUniqueId());
@@ -81,6 +84,7 @@ public final class RadioListeners implements Listener {
 
     @EventHandler
     public void onKick(PlayerKickEvent event) {
+        plugin.markPlayerOffline(event.getPlayer().getUniqueId());
         plugin.normalizeTalkingVariantInMainHand(event.getPlayer(), true);
         plugin.releaseBusyLineIfOwned(event.getPlayer().getUniqueId());
         plugin.getRadioState().clear(event.getPlayer().getUniqueId());
@@ -409,7 +413,12 @@ public final class RadioListeners implements Listener {
             // Pirate eavesdrop activation: hold PIRACI_RANDOM radio in main hand.
             boolean wasEavesdropping = plugin.getRadioState().getEavesdroppingChannel(player.getUniqueId()) != null;
             RadioChannel inHand = itemUtil.getChannel(player.getInventory().getItemInMainHand());
-            boolean wantsEavesdrop = inHand == RadioChannel.PIRACI_RANDOM && player.hasPermission(RadioChannel.PIRACI_RANDOM.usePermission());
+            boolean hasPirateListenPerm = player.hasPermission(RadioChannel.PIRACI_RANDOM.listenPermission());
+            boolean wantsEavesdrop = inHand == RadioChannel.PIRACI_RANDOM && hasPirateListenPerm;
+
+            if (inHand == RadioChannel.PIRACI_RANDOM && !hasPirateListenPerm) {
+                plugin.maybeNotifyNoListen(player, RadioChannel.PIRACI_RANDOM);
+            }
 
             if (wasEavesdropping && !wantsEavesdrop) {
                 plugin.getRadioState().stopPirateEavesdrop(player.getUniqueId());

@@ -30,7 +30,7 @@ public enum RadioChannel {
 
     public String usePermission() {
         if (this == PIRACI_RANDOM) {
-            return "radio.randomChannel.piraci";
+            return "radio.use.randomchannel.piraci";
         }
         return "radio.use." + id;
     }
@@ -38,7 +38,7 @@ public enum RadioChannel {
     public String listenPermission() {
         // For PIRACI_RANDOM we use the dedicated permission from spec
         if (this == PIRACI_RANDOM) {
-            return "radio.randomChannel.piraci";
+            return "radio.listen.randomchannel.piraci";
         }
         return "radio.listen." + id;
     }

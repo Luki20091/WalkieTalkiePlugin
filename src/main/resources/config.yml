@@ -15,6 +15,9 @@ svc:
   # DEV-only: allow hearing yourself on radio for debugging routing.
   # Works only if `dev: true` AND this flag is true.
   hearSelfInDev: false
+  # Voice Chat host shown by /walkietalkie info (informational only)
+  # Example: "127.0.0.1" or "my.domain.com"
+  host: "192.168.18.17"
   # Voice Chat UDP port (informational only; real port is configured in voicechat-server.properties)
   port: 24454
   # If true, radio/proximity override will only apply within the same world.
@@ -158,13 +161,30 @@ commands:
       - "&bWalkieTalkiePlugin &7v{version}"
       - "&7SVC: &f{svcEnabled} &7worldOnly: &f{sameWorldOnly}"
       - "&7radioMinDistance: &f{radioMinDistance}"
+      - "&7voiceHost: &f{svcHost}"
       - "&7voicePort: &f{svcPort}"
       # Extra placeholders you can use in any line:
       # - {svcHooked}
       # - {radioScope}
+      # - {svcAddress} (computed from host+port; legacy svc.address also works)
 
 # ActionBar notifications (all optional)
 notifications:
+  permissions:
+    # Cooldown for permission warnings to avoid spam
+    cooldownMs: 1500
+    # Shown when player tries to transmit but lacks permission
+    noTransmit:
+      enabled: true
+      actionBar: "&cBrak permisji: nie możesz nadawać na &f{channel}"
+    # Shown when player has radios but can't listen to any selected channel (or pirate eavesdrop)
+    noListen:
+      enabled: true
+      actionBar: "&cBrak permisji: nie możesz słuchać kanału &f{channel}"
+    # Shown when player lacks both use + listen permissions
+    noAccess:
+      enabled: true
+      actionBar: "&cBrak permisji: nie możesz mówić ani słuchać &f{channel}"
   transmit:
     start:
       enabled: true
@@ -197,5 +217,5 @@ hints:
 
 # Debugger / diagnostyka
 debug:
-  enabled: false
-  logIntervalMs: 5000
+  enabled: true
+  logIntervalMs: 3000

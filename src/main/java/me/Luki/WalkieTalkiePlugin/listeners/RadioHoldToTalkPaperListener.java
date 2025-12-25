@@ -39,8 +39,18 @@ public final class RadioHoldToTalkPaperListener implements Listener {
         if (channel == null) {
             return;
         }
-        if (!player.hasPermission(channel.usePermission())) {
-            return;
+
+        // Pirate eavesdrop radio (listen-only)
+        if (channel == RadioChannel.PIRACI_RANDOM) {
+            if (!player.hasPermission(channel.listenPermission())) {
+                plugin.maybeNotifyNoListen(player, channel);
+                return;
+            }
+        } else {
+            if (!player.hasPermission(channel.usePermission())) {
+                plugin.maybeNotifyNoTransmit(player, channel);
+                return;
+            }
         }
 
         // Pirate eavesdrop radio: in Paper fallback this may not stop correctly for disc fragments.

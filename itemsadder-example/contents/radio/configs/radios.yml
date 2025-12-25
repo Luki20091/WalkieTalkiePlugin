@@ -7,6 +7,7 @@ items:
 
   radio_czerwoni_0:
     display_name: "&fRadio: &cCzerwonych"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -48,6 +49,7 @@ items:
 
   radio_niebiescy_0:
     display_name: "&fRadio: &9Niebieskich"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -89,6 +91,7 @@ items:
 
   radio_handlarze_0:
     display_name: "&fRadio: &eHandlarzy"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -130,6 +133,7 @@ items:
 
   radio_piraci_0:
     display_name: "&fRadio: &cPiratów"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -171,6 +175,7 @@ items:
 
   radio_tohandlarze_0:
     display_name: "&fRadio: &eDo Handlarzy"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -212,6 +217,7 @@ items:
 
   radio_piraci_random_0:
     display_name: "&fStare Radio: &0Piratów"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:

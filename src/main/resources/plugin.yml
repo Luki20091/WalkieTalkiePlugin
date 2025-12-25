@@ -12,8 +12,23 @@ commands:
     description: WalkieTalkiePlugin main command
     usage: /<command> <reload|info>
     aliases: [ wt ]
+    permission: walkietalkie.admin
 
 permissions:
+  # Main admin permission for all /wt commands
+  walkietalkie.admin:
+    description: WalkieTalkiePlugin admin permission (commands)
+    default: op
+    children:
+      walkietalkie.reload: true
+      walkietalkie.info: true
+
+  # Compatibility alias (old node)
+  permission.admin:
+    description: (compat) Alias for walkietalkie.admin
+    default: op
+    children:
+      walkietalkie.admin: true
   radio.use.*:
     description: Allows using any radio channel
     default: false
@@ -23,6 +38,7 @@ permissions:
       radio.use.handlarze: true
       radio.use.piraci: true
       radio.use.tohandlarze: true
+      radio.use.randomchannel.piraci: true
 
   radio.listen.*:
     description: Allows listening to any radio channel
@@ -33,10 +49,11 @@ permissions:
       radio.listen.handlarze: true
       radio.listen.piraci: true
       radio.listen.tohandlarze: true
+      radio.listen.randomchannel.piraci: true
 
   radio.craft.*:
     description: Allows crafting any radio channel
-    default: false
+    default: op
     children:
       radio.craft.czerwoni: true
       radio.craft.niebiescy: true
@@ -53,7 +70,7 @@ permissions:
     default: false
   radio.craft.czerwoni:
     description: Allows crafting red team radio
-    default: false
+    default: op
 
   radio.use.niebiescy:
     description: Allows using blue team radio
@@ -63,7 +80,7 @@ permissions:
     default: false
   radio.craft.niebiescy:
     description: Allows crafting blue team radio
-    default: false
+    default: op
 
   radio.use.handlarze:
     description: Allows using merchants radio
@@ -73,7 +90,7 @@ permissions:
     default: false
   radio.craft.handlarze:
     description: Allows crafting merchants radio
-    default: false
+    default: op
 
   radio.use.piraci:
     description: Allows using pirates radio
@@ -83,7 +100,7 @@ permissions:
     default: false
   radio.craft.piraci:
     description: Allows crafting pirates radio
-    default: false
+    default: op
 
   radio.use.tohandlarze:
     description: Allows using "to merchants" radio
@@ -93,18 +110,28 @@ permissions:
     default: false
   radio.craft.tohandlarze:
     description: Allows crafting "to merchants" radio
+    default: op
+
+  radio.use.randomchannel.piraci:
+    description: Allows using pirate random channel radio (eavesdrop)
+    default: false
+  radio.listen.randomchannel.piraci:
+    description: Allows listening via pirate random channel radio (eavesdrop)
     default: false
 
   radio.randomChannel.piraci:
-    description: Allows using pirate random channel radio (use/listen)
+    description: (compat) Alias for pirate random channel permissions
     default: false
+    children:
+      radio.use.randomchannel.piraci: true
+      radio.listen.randomchannel.piraci: true
   radio.craft.randomchannel.piraci:
     description: Allows crafting pirate random channel radio
-    default: false
+    default: op
 
   walkietalkie.reload:
     description: Allows reloading WalkieTalkiePlugin config
     default: op
   walkietalkie.info:
     description: Allows viewing WalkieTalkiePlugin info
-    default: true
+    default: op

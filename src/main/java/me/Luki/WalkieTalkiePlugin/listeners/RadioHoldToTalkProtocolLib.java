@@ -90,8 +90,16 @@ public final class RadioHoldToTalkProtocolLib {
         if (channel == null) {
             return;
         }
-        if (!player.hasPermission(channel.usePermission())) {
-            return;
+        if (channel == RadioChannel.PIRACI_RANDOM) {
+            if (!player.hasPermission(channel.listenPermission())) {
+                plugin.maybeNotifyNoListen(player, channel);
+                return;
+            }
+        } else {
+            if (!player.hasPermission(channel.usePermission())) {
+                plugin.maybeNotifyNoTransmit(player, channel);
+                return;
+            }
         }
 
         // Pirate eavesdrop radio: do not transmit, only listen to a random channel while holding PPM

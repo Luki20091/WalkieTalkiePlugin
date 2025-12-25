@@ -1,0 +1,15 @@
+info:
+  namespace: radio
+
+categories:
+  radios:
+    enabled: true
+    name: "&0Radia"
+    icon: "radio:radio_czerwoni_0"
+    items:
+      - "radio:radio_czerwoni_0"
+      - "radio:radio_niebiescy_0"
+      - "radio:radio_handlarze_0"
+      - "radio:radio_piraci_0"
+      - "radio:radio_tohandlarze_0"
+      - "radio:radio_piraci_random_0"
