@@ -422,10 +422,17 @@ public final class RadioListeners implements Listener {
 
             if (wasEavesdropping && !wantsEavesdrop) {
                 plugin.getRadioState().stopPirateEavesdrop(player.getUniqueId());
+                // Pirate radio requirement: filterLong is a continuous "static" while eavesdropping.
+                // Stop it only if no other mode (TX/LISTEN) is currently keeping it active.
+                if (!plugin.isTransmitUiActive(player.getUniqueId()) && !plugin.isListenUiActive(player.getUniqueId())) {
+                    plugin.stopFilterLongSound(player);
+                }
                 plugin.playFeedbackSound(player, "sounds.stop");
                 plugin.playConfiguredNotification(player, "notifications.eavesdrop.stop");
             } else if (!wasEavesdropping && wantsEavesdrop) {
                 plugin.getRadioState().startPirateEavesdrop(player.getUniqueId());
+                // Start continuous pirate static immediately, even if nobody is talking.
+                plugin.playFilterLongSound(player);
                 plugin.playFeedbackSound(player, "sounds.start");
                 plugin.playConfiguredNotification(player, "notifications.eavesdrop.start");
             }

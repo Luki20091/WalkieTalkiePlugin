@@ -49,38 +49,42 @@ radios:
   tohandlarze: "radio:radio_tohandlarze"
   piraci_random: "radio:radio_piraci_random"
 
-# Feedback sound when starting/stopping radio transmit
+# Feedback sounds
 sounds:
-  # Dedicated sound for starting radio transmit (separate from generic sounds.start)
+  # Dedicated sounds for starting/stopping radio transmit.
+  # Note: generic sounds.start/stop are used for LISTEN and pirate eavesdrop UX (not for transmit).
   transmitStart:
     enabled: true
-    # Block placement sound by default
-    sound: "block.azalea_leaves.hit"
-    volume: 0.2
-    pitch: 0.6
-
+    sound: "radio:start_transmit"
+    volume: 0.4
+    pitch: 1.0
+  transmitStop:
+    enabled: true
+    sound: "radio:stop_transmit"
+    volume: 0.4
+    pitch: 1.0
   start:
     enabled: true
     sound: "block.sand.place"
-    volume: 1.0
+    volume: 0.6
     pitch: 0.5
   stop:
     enabled: true
     sound: "block.sand.place"
-    volume: 1.0
+    volume: 0.6
     pitch: 0.1
   # Played once when switching to a radio / between radios in hotbar
   switch:
     enabled: false
     sound: "block.sand.place"
-    volume: 0.8
+    volume: 0.4
     pitch: 0.8
 
   # Played once when putting away a radio (switching away from a radio)
   holster:
     enabled: false
     sound: "block.sand.place"
-    volume: 1.0
+    volume: 0.6
     pitch: 0.1
 
   # Subtle loop/pulse for a "radio filter" feeling while transmitting (PTT active)
@@ -118,14 +122,14 @@ sounds:
   filterLong:
     enabled: true
     sound: "radio:filter_long"
-    volume: 1.0
+    volume: 0.04
     pitch: 1.0
 
   # Played when channel is busy (someone else is transmitting)
   busy:
     enabled: true
     sound: "block.note_block.bass"
-    volume: 0.7
+    volume: 0.3
     pitch: 0.9
 
 # Visual staging (ItemsAdder textures order: _0 OFF, _1 TRANSMIT, _2 LISTEN)

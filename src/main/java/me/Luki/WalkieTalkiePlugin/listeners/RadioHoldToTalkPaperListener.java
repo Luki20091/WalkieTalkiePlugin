@@ -69,6 +69,8 @@ public final class RadioHoldToTalkPaperListener implements Listener {
         }
         plugin.getRadioState().setTransmitting(player.getUniqueId(), channel);
         plugin.setHoldToTalkActive(player.getUniqueId(), true);
+        // filterLong is LISTEN/eavesdrop-only; ensure it is not audible during transmit.
+        plugin.stopFilterLongSound(player);
         plugin.maybePlayFilterLoopPulseNow(player);
         plugin.playTransmitStartSound(player);
         plugin.playConfiguredNotification(player, "notifications.transmit.start");
@@ -93,11 +95,14 @@ public final class RadioHoldToTalkPaperListener implements Listener {
 
         if (changed) {
             plugin.setHoldToTalkActive(player.getUniqueId(), false);
-            plugin.playFeedbackSound(player, "sounds.stop");
             if (previousTransmit != null) {
+                plugin.playTransmitStopSound(player);
                 plugin.playConfiguredNotification(player, "notifications.transmit.stop");
             }
             if (previousEavesdropTarget != null) {
+                if (previousTransmit == null) {
+                    plugin.playFeedbackSound(player, "sounds.stop");
+                }
                 plugin.playConfiguredNotification(player, "notifications.eavesdrop.stop");
             }
 

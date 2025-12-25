@@ -67,6 +67,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     private final Map<UUID, Long> lastRadioReceiveAtMs = new ConcurrentHashMap<>();
     private final Map<UUID, RadioChannel> lastRadioReceiveChannel = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> listenUiActive = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> listenClearTaskByPlayer = new ConcurrentHashMap<>();
 
     private volatile VoiceBridge voicechatBridge;
@@ -746,6 +747,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                 if (player == null) {
                     return;
                 }
+                // filterLong is LISTEN/eavesdrop-only; make sure it is not audible during transmit.
+                stopFilterLongSound(player);
                 playTransmitStartSound(player);
                 playConfiguredNotification(player, "notifications.transmit.start");
                 // Start filterLoop immediately on mic start (PTT mode)
@@ -773,6 +776,25 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         long now = System.currentTimeMillis();
         lastRadioReceiveAtMs.put(receiverUuid, now);
         lastRadioReceiveChannel.put(receiverUuid, channel);
+
+        boolean wasActive = Boolean.TRUE.equals(listenUiActive.put(receiverUuid, true));
+        if (!wasActive) {
+            UUID uuid = receiverUuid;
+            runNextTick(() -> {
+                Player player = getServer().getPlayer(uuid);
+                if (player == null) {
+                    return;
+                }
+
+                boolean txActive = Boolean.TRUE.equals(transmitUiActive.get(uuid));
+                // filterLong is LISTEN/eavesdrop-only; do not start it while transmitting.
+                boolean eavesdropping = radioState != null && radioState.getEavesdroppingChannel(uuid) != null;
+                if (!txActive && !eavesdropping) {
+                    playFilterLongSound(player);
+                    playFeedbackSound(player, "sounds.start");
+                }
+            });
+        }
 
         UUID uuid = receiverUuid;
         runNextTick(() -> {
@@ -906,9 +928,17 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             Player player = getServer().getPlayer(playerUuid);
             if (player != null) {
                 if (wasActive) {
+                    // filterLong should never be audible during transmit.
+                    // After transmit ends, we may resume it if the user is still LISTENing or eavesdropping.
                     stopFilterLongSound(player);
-                    playFeedbackSound(player, "sounds.stop");
+                    playTransmitStopSound(player);
                     playConfiguredNotification(player, "notifications.transmit.stop");
+
+                    boolean listenActive = Boolean.TRUE.equals(listenUiActive.get(playerUuid));
+                    boolean eavesdropping = radioState != null && radioState.getEavesdroppingChannel(playerUuid) != null;
+                    if (listenActive || eavesdropping) {
+                        playFilterLongSound(player);
+                    }
                 }
                 RadioChannel txChannel = transmitChannelByPlayer.get(playerUuid);
                 applyHotbarVisuals(player, txChannel, false, System.currentTimeMillis());
@@ -946,8 +976,20 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             lastRadioReceiveAtMs.remove(playerUuid);
             lastRadioReceiveChannel.remove(playerUuid);
 
+            boolean wasActive = Boolean.TRUE.equals(listenUiActive.get(playerUuid));
+            listenUiActive.put(playerUuid, false);
+
             Player player = getServer().getPlayer(playerUuid);
             if (player != null) {
+                if (wasActive) {
+                    boolean txActive = Boolean.TRUE.equals(transmitUiActive.get(playerUuid));
+                    // Don't stop the filter/start-stop sounds if transmit is still active.
+                    boolean eavesdropping = radioState != null && radioState.getEavesdroppingChannel(playerUuid) != null;
+                    if (!txActive && !eavesdropping) {
+                        stopFilterLongSound(player);
+                        playFeedbackSound(player, "sounds.stop");
+                    }
+                }
                 RadioChannel txChannel = transmitChannelByPlayer.get(playerUuid);
                 boolean txActive = Boolean.TRUE.equals(transmitUiActive.get(playerUuid));
                 applyHotbarVisuals(player, txChannel, txActive, System.currentTimeMillis());
@@ -1398,6 +1440,10 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         return uuid != null && Boolean.TRUE.equals(transmitUiActive.get(uuid));
     }
 
+    public boolean isListenUiActive(UUID uuid) {
+        return uuid != null && Boolean.TRUE.equals(listenUiActive.get(uuid));
+    }
+
     /**
      * Best-effort safety: ensure that radios stored outside the main hand are never left in the ON stage.
      * This prevents "stealing" an active radio from inventories/chests.
@@ -1569,29 +1615,38 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         }
 
         Sound sound = resolveSound(soundName);
-        if (sound == null) {
-            debugLog("sound:" + path, "Invalid sound in config: " + path + ".sound='" + soundName + "'");
+        if (sound != null) {
+            player.playSound(player.getLocation(), sound, volume, pitch);
             return;
         }
 
-        player.playSound(player.getLocation(), sound, volume, pitch);
+        // Fallback: allow custom resource-pack sound events (e.g. ItemsAdder: "radio:tx_start").
+        try {
+            player.playSound(player.getLocation(), soundName, volume, pitch);
+        } catch (Throwable t) {
+            debugLog("sound:" + path, "Invalid sound in config: " + path + ".sound='" + soundName + "' (" + t.getClass().getSimpleName() + ": " + t.getMessage() + ")");
+        }
     }
 
     public void playTransmitStartSound(Player player) {
-        playFilterLongSound(player);
-
-        // User requirement: play two sounds on transmit start.
-        // 1) Dedicated TX start (block place by default)
-        // 2) Legacy generic start sound (for backwards compatibility and stacking)
+        // TX uses only the dedicated sounds.transmitStart.
+        // Generic sounds.start is reserved for LISTEN and pirate eavesdrop UX.
         String soundName = getConfig().getString("sounds.transmitStart.sound", "");
         if (soundName != null && !soundName.isBlank()) {
             playFeedbackSound(player, "sounds.transmitStart");
         }
-
-        playFeedbackSound(player, "sounds.start");
     }
 
-    private void playFilterLongSound(Player player) {
+    public void playTransmitStopSound(Player player) {
+        // TX uses only the dedicated sounds.transmitStop.
+        // Generic sounds.stop is reserved for LISTEN and pirate eavesdrop UX.
+        String soundName = getConfig().getString("sounds.transmitStop.sound", "");
+        if (soundName != null && !soundName.isBlank()) {
+            playFeedbackSound(player, "sounds.transmitStop");
+        }
+    }
+
+    public void playFilterLongSound(Player player) {
         if (player == null) {
             return;
         }
@@ -1620,7 +1675,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         }
     }
 
-    private void stopFilterLongSound(Player player) {
+    public void stopFilterLongSound(Player player) {
         if (player == null) {
             return;
         }

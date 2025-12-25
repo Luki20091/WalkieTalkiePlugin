@@ -6,5 +6,21 @@
         "stream": true
       }
     ]
+  },
+  "start_transmit": {
+    "sounds": [
+      {
+        "name": "radio:start_transmit",
+        "stream": false
+      }
+    ]
+  },
+  "stop_transmit": {
+    "sounds": [
+      {
+        "name": "radio:stop_transmit",
+        "stream": false
+      }
+    ]
   }
 }
