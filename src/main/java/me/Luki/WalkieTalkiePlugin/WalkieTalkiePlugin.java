@@ -1793,11 +1793,14 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             return;
         }
 
+        debugLog("sound:" + path, "playFeedbackSound called; configured='" + soundName + "' volume=" + volume + " pitch=" + pitch);
         Sound sound = resolveSound(soundName);
         if (sound != null) {
+            debugLog("sound:" + path, "Resolved enum Sound=" + String.valueOf(sound));
             player.playSound(player.getLocation(), sound, volume, pitch);
             return;
         }
+        debugLog("sound:" + path, "Did not resolve enum Sound for='" + soundName + "', attempting resource-pack key fallback");
 
         // Fallback: allow custom resource-pack sound events (e.g. ItemsAdder: "radio:tx_start").
         try {
@@ -1812,6 +1815,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         // Generic sounds.start is reserved for LISTEN and pirate eavesdrop UX.
         String soundName = getConfig().getString("sounds.transmitStart.sound", "");
         if (soundName != null && !soundName.isBlank()) {
+            debugLog("sound:transmitStart", "playTransmitStartSound called; configured='" + soundName + "'");
             playFeedbackSound(player, "sounds.transmitStart");
         }
     }
@@ -1821,6 +1825,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         // Generic sounds.stop is reserved for LISTEN and pirate eavesdrop UX.
         String soundName = getConfig().getString("sounds.transmitStop.sound", "");
         if (soundName != null && !soundName.isBlank()) {
+            debugLog("sound:transmitStop", "playTransmitStopSound called; configured='" + soundName + "'");
             playFeedbackSound(player, "sounds.transmitStop");
         }
     }
@@ -1845,6 +1850,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         // Prevent overlap if we retrigger quickly.
         stopFilterLongSound(player);
+
+        debugLog("sound:" + basePath, "playFilterLongSound called; configured='" + soundName + "' volume=" + volume + " pitch=" + pitch);
 
         try {
             // Plays a custom resource-pack sound event by key (e.g. "radio:filter_long").
