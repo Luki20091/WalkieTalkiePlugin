@@ -42,6 +42,43 @@ public final class RadioListeners implements Listener {
         this.itemUtil = itemUtil;
     }
 
+    private void updatePirateEavesdropForMainHand(Player player) {
+        // Pirate eavesdrop activation: hold PIRACI_RANDOM radio in main hand.
+        boolean wasEavesdropping = plugin.getRadioState().getEavesdroppingChannel(player.getUniqueId()) != null;
+        RadioChannel inHand = itemUtil.getChannel(player.getInventory().getItemInMainHand());
+        boolean hasPirateListenPerm = player.hasPermission(RadioChannel.PIRACI_RANDOM.listenPermission());
+        boolean wantsEavesdrop = inHand == RadioChannel.PIRACI_RANDOM && hasPirateListenPerm;
+
+        boolean changed = false;
+
+        if (inHand == RadioChannel.PIRACI_RANDOM && !hasPirateListenPerm) {
+            plugin.maybeNotifyNoListen(player, RadioChannel.PIRACI_RANDOM);
+        }
+
+        if (wasEavesdropping && !wantsEavesdrop) {
+            plugin.getRadioState().stopPirateEavesdrop(player.getUniqueId());
+            changed = true;
+            // Pirate radio requirement: filterLong is a continuous "static" while eavesdropping.
+            // Stop it only if no other mode (TX/LISTEN) is currently keeping it active.
+            if (!plugin.isTransmitUiActive(player.getUniqueId()) && !plugin.isListenUiActive(player.getUniqueId())) {
+                plugin.stopFilterLongSound(player);
+            }
+            plugin.playFeedbackSound(player, "sounds.stop");
+            plugin.playConfiguredNotification(player, "notifications.eavesdrop.stop");
+        } else if (!wasEavesdropping && wantsEavesdrop) {
+            plugin.getRadioState().startPirateEavesdrop(player.getUniqueId());
+            changed = true;
+            // Start continuous pirate static immediately, even if nobody is talking.
+            plugin.playFilterLongSound(player);
+            plugin.playFeedbackSound(player, "sounds.start");
+            plugin.playConfiguredNotification(player, "notifications.eavesdrop.start");
+        }
+
+        if (changed) {
+            plugin.refreshHotbarVisualsNow(player);
+        }
+    }
+
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
@@ -136,7 +173,7 @@ public final class RadioListeners implements Listener {
             if (itemUtil.isRadio(cursor)) {
                 var normalized = plugin.normalizeTalkingVariantToBase(cursor);
                 if (normalized != null) {
-                    event.getView().setCursor(normalized);
+                    event.setCursor(normalized);
                 }
             }
         } catch (Throwable ignored) {
@@ -159,12 +196,24 @@ public final class RadioListeners implements Listener {
                 var cursor = event.getCursor();
                 boolean activeRadio = plugin.isRadioOnStage(current) || plugin.isRadioOnStage(cursor);
                 boolean txUi = plugin.isTransmitUiActive(player.getUniqueId());
+                boolean listenUi = plugin.isListenUiActive(player.getUniqueId());
+                boolean eavesdrop = plugin.getRadioState().getEavesdroppingChannel(player.getUniqueId()) != null;
                 boolean anyRadio = itemUtil.isRadio(current) || itemUtil.isRadio(cursor);
 
                 if (activeRadio || (txUi && anyRadio)) {
+                    // Pressing Q while in any radio mode should never leave sounds stuck.
+                    if (anyRadio && (txUi || listenUi || eavesdrop || plugin.isHoldToTalkActive(player.getUniqueId()))) {
+                        plugin.forceStopAllRadioModes(player);
+                    }
                     event.setCancelled(true);
                     plugin.runNextTick(() -> plugin.normalizeTalkingVariantInMainHand(player, true));
                     return;
+                }
+
+                // If the player is dropping a radio from inventory, force-stop all radio modes.
+                // (Dropping may not trigger PlayerItemHeldEvent, so podsłuch can get stuck otherwise.)
+                if (anyRadio && (txUi || listenUi || eavesdrop || plugin.isHoldToTalkActive(player.getUniqueId()))) {
+                    plugin.forceStopAllRadioModes(player);
                 }
             }
         } catch (Throwable ignored) {
@@ -200,7 +249,7 @@ public final class RadioListeners implements Listener {
             if (itemUtil.isRadio(cursor)) {
                 var normalized = plugin.normalizeTalkingVariantToBase(cursor);
                 if (normalized != null) {
-                    event.getView().setCursor(normalized);
+                    event.setCursor(normalized);
                 }
             }
         } catch (Throwable ignored) {
@@ -269,6 +318,22 @@ public final class RadioListeners implements Listener {
     public void onDrop(PlayerDropItemEvent event) {
         Player player = event.getPlayer();
 
+        // Q-drop should immediately end transmit/listen/eavesdrop to avoid stuck looping sounds.
+        boolean droppedRadio = false;
+        try {
+            var entity = event.getItemDrop();
+            if (entity != null) {
+                var stack = entity.getItemStack();
+                droppedRadio = itemUtil.isRadio(stack);
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+
+        if (droppedRadio) {
+            plugin.forceStopAllRadioModes(player);
+        }
+
         // Never allow dropping an ACTIVE radio.
         try {
             var entity = event.getItemDrop();
@@ -333,7 +398,7 @@ public final class RadioListeners implements Listener {
         // Ensure picked-up radios are never ON.
         try {
             var entity = event.getEntity();
-            if (!(entity instanceof Player)) {
+            if (!(entity instanceof Player player)) {
                 return;
             }
             var itemEntity = event.getItem();
@@ -344,9 +409,11 @@ public final class RadioListeners implements Listener {
             var normalized = plugin.normalizeTalkingVariantToBase(stack);
             if (normalized != null) {
                 itemEntity.setItemStack(normalized);
-                return;
             }
-            // If it's a radio but no normalization change was needed, it's already safe.
+
+            // Picking up an item can place it directly into the currently selected hotbar slot,
+            // but that does NOT trigger PlayerItemHeldEvent. Re-evaluate eavesdrop next tick.
+            plugin.runNextTick(() -> updatePirateEavesdropForMainHand(player));
         } catch (Throwable ignored) {
             // best-effort
         }
@@ -410,32 +477,7 @@ public final class RadioListeners implements Listener {
                 }
             }
 
-            // Pirate eavesdrop activation: hold PIRACI_RANDOM radio in main hand.
-            boolean wasEavesdropping = plugin.getRadioState().getEavesdroppingChannel(player.getUniqueId()) != null;
-            RadioChannel inHand = itemUtil.getChannel(player.getInventory().getItemInMainHand());
-            boolean hasPirateListenPerm = player.hasPermission(RadioChannel.PIRACI_RANDOM.listenPermission());
-            boolean wantsEavesdrop = inHand == RadioChannel.PIRACI_RANDOM && hasPirateListenPerm;
-
-            if (inHand == RadioChannel.PIRACI_RANDOM && !hasPirateListenPerm) {
-                plugin.maybeNotifyNoListen(player, RadioChannel.PIRACI_RANDOM);
-            }
-
-            if (wasEavesdropping && !wantsEavesdrop) {
-                plugin.getRadioState().stopPirateEavesdrop(player.getUniqueId());
-                // Pirate radio requirement: filterLong is a continuous "static" while eavesdropping.
-                // Stop it only if no other mode (TX/LISTEN) is currently keeping it active.
-                if (!plugin.isTransmitUiActive(player.getUniqueId()) && !plugin.isListenUiActive(player.getUniqueId())) {
-                    plugin.stopFilterLongSound(player);
-                }
-                plugin.playFeedbackSound(player, "sounds.stop");
-                plugin.playConfiguredNotification(player, "notifications.eavesdrop.stop");
-            } else if (!wasEavesdropping && wantsEavesdrop) {
-                plugin.getRadioState().startPirateEavesdrop(player.getUniqueId());
-                // Start continuous pirate static immediately, even if nobody is talking.
-                plugin.playFilterLongSound(player);
-                plugin.playFeedbackSound(player, "sounds.start");
-                plugin.playConfiguredNotification(player, "notifications.eavesdrop.start");
-            }
+            updatePirateEavesdropForMainHand(player);
         });
     }
 

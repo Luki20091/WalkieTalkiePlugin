@@ -1154,8 +1154,20 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         int heldSlot = player.getInventory().getHeldItemSlot();
 
+        // Pirate eavesdrop visuals are special:
+        // - PIRACI_RANDOM in main hand should show _1 while eavesdropping (idle)
+        // - it should show _2 only while it "caught" a line (i.e. we actually receive audio)
+        boolean eavesdropping = radioState != null && radioState.getEavesdroppingChannel(uuid) != null;
+        RadioChannel heldChannel = itemUtil.getChannel(player.getInventory().getItemInMainHand());
+        boolean pirateInMainHand = heldChannel == RadioChannel.PIRACI_RANDOM;
+
         int listenSlot = -1;
         if (listenActive && listenChannel != null) {
+            // If we're pirate-eavesdropping and holding the pirate radio, the "caught line" visual belongs
+            // on the pirate radio, not on the real channel radio (which may not even exist in hotbar).
+            if (eavesdropping && pirateInMainHand) {
+                listenSlot = heldSlot;
+            } else {
             for (int slot = 0; slot < 9; slot++) {
                 ItemStack stack = player.getInventory().getItem(slot);
                 RadioChannel itemChannel = itemUtil.getChannel(stack);
@@ -1170,6 +1182,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
                 listenSlot = slot;
                 break;
+            }
             }
         }
 
@@ -1186,6 +1199,9 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                 desired = RadioVisualStage.TRANSMIT;
             } else if (listenSlot >= 0 && slot == listenSlot) {
                 desired = RadioVisualStage.LISTEN;
+            } else if (eavesdropping && pirateInMainHand && slot == heldSlot && itemChannel == RadioChannel.PIRACI_RANDOM) {
+                // Visual-only: use stage _1 as "eavesdrop idle" for PIRACI_RANDOM.
+                desired = RadioVisualStage.TRANSMIT;
             } else {
                 desired = RadioVisualStage.OFF;
             }
@@ -1306,6 +1322,11 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             return false;
         }
 
+        // PIRACI_RANDOM is listen-only; never treat its staged visuals as an "active transmit" radio.
+        if (channel == RadioChannel.PIRACI_RANDOM) {
+            return false;
+        }
+
         // "Active" for anti-drop/anti-steal is TRANSMIT only.
         if (itemsAdder != null && itemsAdder.isAvailable()) {
             String txId = getStageItemsAdderId(channel, RadioVisualStage.TRANSMIT);
@@ -1376,6 +1397,69 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         // Apply OFF stage immediately.
         applyHotbarVisuals(player, transmitChannelByPlayer.get(uuid), false, System.currentTimeMillis());
+    }
+
+    /**
+     * Hard-stop any LISTEN visuals and related looping audio.
+     * Used when we have an explicit signal that the player can't/doesn't want to listen anymore
+     * (e.g. dropping the radio with Q).
+     */
+    public void forceStopListenVisuals(Player player) {
+        if (player == null) {
+            return;
+        }
+
+        UUID uuid = player.getUniqueId();
+
+        BukkitTask task = listenClearTaskByPlayer.remove(uuid);
+        if (task != null) {
+            try {
+                task.cancel();
+            } catch (Throwable ignored) {
+                // best-effort
+            }
+        }
+
+        lastRadioReceiveAtMs.remove(uuid);
+        lastRadioReceiveChannel.remove(uuid);
+        listenUiActive.put(uuid, false);
+
+        // Stop static loop; if some other mode needs it, it will be restarted by that mode.
+        stopFilterLongSound(player);
+
+        RadioChannel txChannel = transmitChannelByPlayer.get(uuid);
+        boolean txActive = Boolean.TRUE.equals(transmitUiActive.get(uuid));
+        applyHotbarVisuals(player, txChannel, txActive, System.currentTimeMillis());
+    }
+
+    /**
+     * Emergency stop for all radio-related active states.
+     * This is intentionally aggressive: it clears transmit/listen/eavesdrop flags and stops looping sounds.
+     */
+    public void forceStopAllRadioModes(Player player) {
+        if (player == null) {
+            return;
+        }
+
+        UUID uuid = player.getUniqueId();
+
+        try {
+            if (radioState != null) {
+                radioState.setTransmitting(uuid, null);
+                radioState.stopPirateEavesdrop(uuid);
+            }
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+
+        setHoldToTalkActive(uuid, false);
+
+        // These also ensure visuals can't get stuck.
+        forceStopTransmitVisuals(player);
+        forceStopListenVisuals(player);
+
+        // Ensure static is definitely off after clearing all modes.
+        stopFilterLongSound(player);
     }
 
     /**

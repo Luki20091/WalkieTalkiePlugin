@@ -61,6 +61,7 @@ public final class RadioHoldToTalkPaperListener implements Listener {
             plugin.getRadioState().startPirateEavesdrop(player.getUniqueId());
             plugin.playFeedbackSound(player, "sounds.start");
             plugin.playConfiguredNotification(player, "notifications.eavesdrop.start");
+            plugin.refreshHotbarVisualsNow(player);
             return;
         }
         RadioChannel already = plugin.getRadioState().getTransmittingChannel(player.getUniqueId());
@@ -108,6 +109,9 @@ public final class RadioHoldToTalkPaperListener implements Listener {
 
             // Ensure transmit visuals can't get stuck in _1 after releasing the item.
             plugin.runNextTick(() -> plugin.forceStopTransmitVisuals(player));
+
+            // Ensure pirate eavesdrop visuals clear back to OFF.
+            plugin.runNextTick(() -> plugin.refreshHotbarVisualsNow(player));
         }
     }
 }
