@@ -34,6 +34,65 @@ import java.util.Set;
 import static me.Luki.WalkieTalkiePlugin.radio.RadioItemKeys.channelKey;
 
 public final class WalkieTalkiePlugin extends JavaPlugin {
+        /**
+         * Always decrements durability of the radio in player's main hand by 1, regardless of listeners.
+         * Use this after transmit ends to ensure durability is reduced.
+         */
+        public void decrementRadioDurability(Player player) {
+            if (player == null || itemUtil == null) return;
+            ItemStack stack = player.getInventory().getItemInMainHand();
+            if (isDevMode()) {
+                String ia = itemUtil != null ? itemUtil.debugGetItemsAdderId(stack) : "<no-ia>";
+                getLogger().info("[WT-DEBUG] decrementRadioDurability called for " + (player == null ? "<null>" : player.getName()) + " ia=" + ia + " type=" + (stack == null ? "<null>" : stack.getType()));
+            }
+            if (stack == null || !itemUtil.isRadio(stack)) {
+                if (isDevMode()) getLogger().info("[WT-DEBUG] Not a radio or empty main hand.");
+                return;
+            }
+            ItemMeta meta = stack.getItemMeta();
+            if (meta == null) {
+                if (isDevMode()) getLogger().info("[WT-DEBUG] ItemMeta is null.");
+                return;
+            }
+            if (!(meta instanceof org.bukkit.inventory.meta.Damageable)) {
+                if (isDevMode()) getLogger().info("[WT-DEBUG] ItemMeta is not Damageable.");
+                return;
+            }
+            org.bukkit.inventory.meta.Damageable damageable = (org.bukkit.inventory.meta.Damageable) meta;
+            int current = damageable.getDamage();
+            int max = stack.getType().getMaxDurability();
+            if (isDevMode()) getLogger().info("[WT-DEBUG] currentDamage=" + current + " max=" + max);
+            if (current < max) {
+                damageable.setDamage(current + 1);
+                stack.setItemMeta(meta);
+                if (isDevMode()) getLogger().info("[WT-DEBUG] Durability decremented (new=" + (current + 1) + ")");
+            } else {
+                if (isDevMode()) getLogger().info("[WT-DEBUG] Damage at or above max; not decremented.");
+            }
+        }
+    /**
+     * Reduces durability of the item in player's main hand by 1, synchronizing durability between radio variants.
+     * If durability reaches 0, the item will be removed automatically by ItemsAdder/Paper.
+     */
+    public void reduceRadioDurability(Player player) {
+        // Kept for backward compatibility. Forward to the unified implementation.
+        decrementRadioDurability(player);
+    }
+
+    /**
+     * Synchronizes durability between radio item variants (_0/_1/_2).
+     * Should be called when swapping item variant to keep durability visually correct.
+     */
+    public void syncRadioDurability(ItemStack from, ItemStack to) {
+        if (from == null || to == null) return;
+        ItemMeta fromMeta = from.getItemMeta();
+        ItemMeta toMeta = to.getItemMeta();
+        if (fromMeta instanceof org.bukkit.inventory.meta.Damageable && toMeta instanceof org.bukkit.inventory.meta.Damageable) {
+            int damage = ((org.bukkit.inventory.meta.Damageable) fromMeta).getDamage();
+            ((org.bukkit.inventory.meta.Damageable) toMeta).setDamage(damage);
+            to.setItemMeta(toMeta);
+        }
+    }
 
     private enum RadioVisualStage {
         OFF(0),
@@ -739,6 +798,9 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         // This method may be called off-thread and also multiple times per packet (SVC is per receiver),
         // so we only trigger on the transition from inactive -> active.
         boolean wasActive = Boolean.TRUE.equals(transmitUiActive.put(senderUuid, true));
+        if (isDevMode()) {
+            getLogger().info("[WT-DEBUG] recordMicPacket sender=" + senderUuid + " channel=" + (channel == null ? "<none>" : channel.id()) + " wasActive=" + wasActive);
+        }
         if (!wasActive) {
             UUID uuid = senderUuid;
             RadioChannel txChannel = channel;
@@ -906,17 +968,26 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         if (transmitClearTaskByPlayer.containsKey(playerUuid)) {
             return;
         }
+        if (isDevMode()) {
+            getLogger().info("[WT-DEBUG] ensureTransmitClearScheduled for " + playerUuid);
+        }
         scheduleTransmitClearCheck(playerUuid, transmitVisualActiveForMs);
     }
 
     private void scheduleTransmitClearCheck(UUID playerUuid, long delayMs) {
         long delayTicks = Math.max(1L, (delayMs + 49L) / 50L);
         BukkitTask task = getServer().getScheduler().runTaskLater(this, () -> {
+            if (isDevMode()) {
+                getLogger().info("[WT-DEBUG] transmitClearTask running for " + playerUuid + " delayMs=" + delayMs);
+            }
             transmitClearTaskByPlayer.remove(playerUuid);
 
             long last = lastMicPacketAtMs.getOrDefault(playerUuid, 0L);
             long now = System.currentTimeMillis();
             long dueAt = last + transmitVisualActiveForMs;
+            if (isDevMode()) {
+                getLogger().info("[WT-DEBUG] transmitClearTask last=" + last + " now=" + now + " dueAt=" + dueAt);
+            }
             if (last > 0L && now < dueAt) {
                 scheduleTransmitClearCheck(playerUuid, dueAt - now);
                 return;
@@ -938,6 +1009,27 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                     boolean eavesdropping = radioState != null && radioState.getEavesdroppingChannel(playerUuid) != null;
                     if (listenActive || eavesdropping) {
                         playFilterLongSound(player);
+                    }
+                    // Best-effort: if transmit visuals timed out (SVC stop), ensure transmit state is cleared
+                    // and always decrement durability once for the transmit action.
+                    try {
+                        // Use the cached hotbar/main-hand transmit channel (Voicechat path sets/refreshes this),
+                        // radioState.transmitting is only set by hold-to-talk listeners.
+                        RadioChannel prev = transmitChannelByPlayer.get(playerUuid);
+                        if (isDevMode()) {
+                            getLogger().info("[WT-DEBUG] transmitClearTask cachedTxChannel=" + (prev == null ? "<none>" : prev.id()) + " transmitUiActive=" + Boolean.TRUE.equals(transmitUiActive.get(playerUuid)));
+                        }
+                        if (prev != null) {
+                            // clear cached transmit channel and decrement durability once for this transmit
+                            transmitChannelByPlayer.remove(playerUuid);
+                            if (isDevMode() && player != null) {
+                                ItemStack s = player.getInventory().getItemInMainHand();
+                                String ia = itemUtil != null ? itemUtil.debugGetItemsAdderId(s) : "<no-ia>";
+                                getLogger().info("[WT-DEBUG] transmitClearTask about to decrement radio for " + player.getName() + " ia=" + ia + " type=" + (s == null ? "<null>" : s.getType()));
+                            }
+                            decrementRadioDurability(player);
+                        }
+                    } catch (Throwable ignored) {
                     }
                 }
                 RadioChannel txChannel = transmitChannelByPlayer.get(playerUuid);
@@ -1283,6 +1375,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                 }
                 ItemStack swapped = itemsAdder.createItemStack(targetId, stack.getAmount());
                 if (swapped != null) {
+                    syncRadioDurability(stack, swapped);
                     tagRadioChannel(swapped, channel);
                     return swapped;
                 }
@@ -1293,6 +1386,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                     String altOff = targetId + "_0";
                     ItemStack swappedAlt = itemsAdder.createItemStack(altOff, stack.getAmount());
                     if (swappedAlt != null) {
+                        syncRadioDurability(stack, swappedAlt);
                         tagRadioChannel(swappedAlt, channel);
                         return swappedAlt;
                     }
@@ -1484,6 +1578,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         ItemStack normalized = normalizeTalkingVariantToBase(current);
         if (normalized != null) {
+            syncRadioDurability(current, normalized);
             player.getInventory().setItemInMainHand(normalized);
         }
     }

@@ -4,7 +4,7 @@ main: me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin
 api-version: '1.21'
 load: STARTUP
 softdepend: [ voicechat, ItemsAdder, ProtocolLib ]
-authors: [ Luki & StreamCraft ]
+authors: [ Luki20091 ]
 description: Walkie Talkie Plugin for StreamCraft 3, Simple Voice Chat extension
 
 commands:
@@ -25,13 +25,6 @@ permissions:
       walkietalkie.reload: true
       walkietalkie.info: true
 
-  # Compatibility alias (old node)
-  permission.admin:
-    description: (compat) Alias for walkietalkie.admin
-    default: op
-    children:
-      walkietalkie.admin: true
-
   walkietalkie.reload:
     description: Allows reloading WalkieTalkiePlugin config
     default: op
@@ -41,24 +34,24 @@ permissions:
 
   radio.use.*:
     description: Allows using any radio channel
-    default: false
+    default: op
     children:
       radio.use.czerwoni: true
       radio.use.niebiescy: true
       radio.use.handlarze: true
       radio.use.piraci: true
-      radio.use.tohandlarze: true
+      radio.use.streamcraft: true
       radio.use.randomchannel.piraci: true
 
   radio.listen.*:
     description: Allows listening to any radio channel
-    default: false
+    default: op
     children:
       radio.listen.czerwoni: true
       radio.listen.niebiescy: true
       radio.listen.handlarze: true
       radio.listen.piraci: true
-      radio.listen.tohandlarze: true
+      radio.listen.streamcraft: true
       radio.listen.randomchannel.piraci: true
 
   radio.craft.*:
@@ -69,69 +62,69 @@ permissions:
       radio.craft.niebiescy: true
       radio.craft.handlarze: true
       radio.craft.piraci: true
-      radio.craft.tohandlarze: true
+      radio.craft.streamcraft: true
       radio.craft.randomchannel.piraci: true
 
   radio.use.czerwoni:
     description: Allows using red team radio
-    default: false
+    default: op
   radio.listen.czerwoni:
     description: Allows listening to red team radio
-    default: false
+    default: op
   radio.craft.czerwoni:
     description: Allows crafting red team radio
     default: op
 
   radio.use.niebiescy:
     description: Allows using blue team radio
-    default: false
+    default: op
   radio.listen.niebiescy:
     description: Allows listening to blue team radio
-    default: false
+    default: op
   radio.craft.niebiescy:
     description: Allows crafting blue team radio
     default: op
 
   radio.use.handlarze:
     description: Allows using merchants radio
-    default: false
+    default: op
   radio.listen.handlarze:
     description: Allows listening to merchants radio
-    default: false
+    default: op
   radio.craft.handlarze:
     description: Allows crafting merchants radio
     default: op
 
   radio.use.piraci:
     description: Allows using pirates radio
-    default: false
+    default: op
   radio.listen.piraci:
     description: Allows listening to pirates radio
-    default: false
+    default: op
   radio.craft.piraci:
     description: Allows crafting pirates radio
     default: op
 
-  radio.use.tohandlarze:
-    description: Allows using "to merchants" radio
-    default: false
-  radio.listen.tohandlarze:
-    description: Allows listening to "to merchants" radio
-    default: false
-  radio.craft.tohandlarze:
-    description: Allows crafting "to merchants" radio
+  radio.use.streamcraft:
+    description: Allows using StreamCraft radio
+    default: op
+  radio.listen.streamcraft:
+    description: Allows listening to StreamCraft radio
+    default: op
+  radio.craft.streamcraft:
+    description: Allows crafting StreamCraft radio
     default: op
 
   radio.use.randomchannel.piraci:
     description: Allows using pirate random channel radio (eavesdrop)
-    default: false
+    default: op
   radio.listen.randomchannel.piraci:
     description: Allows listening via pirate random channel radio (eavesdrop)
-    default: false
+    default: op
 
   radio.randomChannel.piraci:
     description: (compat) Alias for pirate random channel permissions
-    default: false
+    default: op
     children:
       radio.use.randomchannel.piraci: true
       radio.listen.randomchannel.piraci: true

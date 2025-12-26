@@ -11,6 +11,7 @@ import me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin;
 import me.Luki.WalkieTalkiePlugin.radio.RadioChannel;
 import me.Luki.WalkieTalkiePlugin.radio.RadioItemUtil;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 
 import java.util.Objects;
 
@@ -117,6 +118,8 @@ public final class RadioHoldToTalkProtocolLib {
         if (already == channel) {
             return;
         }
+        // Reduce durability by 1 when starting transmit
+        // Nie odbieraj durability na starcie
 
         plugin.getRadioState().setTransmitting(player.getUniqueId(), channel);
         plugin.setHoldToTalkActive(player.getUniqueId(), true);
@@ -144,13 +147,17 @@ public final class RadioHoldToTalkProtocolLib {
         RadioChannel previousTransmit = plugin.getRadioState().getTransmittingChannel(player.getUniqueId());
         RadioChannel previousEavesdropTarget = plugin.getRadioState().getEavesdroppingChannel(player.getUniqueId());
 
+        boolean endedTransmit = false;
+        boolean endedEavesdrop = false;
         if (plugin.getRadioState().getTransmittingChannel(player.getUniqueId()) != null) {
             plugin.getRadioState().setTransmitting(player.getUniqueId(), null);
             changed = true;
+            endedTransmit = true;
         }
         if (plugin.getRadioState().getEavesdroppingChannel(player.getUniqueId()) != null) {
             plugin.getRadioState().stopPirateEavesdrop(player.getUniqueId());
             changed = true;
+            endedEavesdrop = true;
         }
 
         if (changed) {
@@ -166,8 +173,22 @@ public final class RadioHoldToTalkProtocolLib {
                 plugin.playConfiguredNotification(player, "notifications.eavesdrop.stop");
             }
 
-            // Packet listeners may run off-thread; enforce main-thread inventory/UI updates.
-            plugin.runNextTick(() -> plugin.forceStopTransmitVisuals(player));
+            // Najpierw zakończ tryb TRANSMIT (przywróć OFF)
+            final boolean endedTransmitFinal = endedTransmit;
+            final boolean endedEavesdropFinal = endedEavesdrop;
+            if ((endedTransmitFinal || endedEavesdropFinal)) {
+                // Debug: log item state just before decrement
+                if (plugin.isDevMode()) {
+                    ItemStack s = player.getInventory().getItemInMainHand();
+                    String ia = plugin.getItemUtil() != null ? plugin.getItemUtil().debugGetItemsAdderId(s) : "<no-ia>";
+                    plugin.getLogger().info("[WT-DEBUG] onBlockDig about to decrement radio for " + player.getName() + " ia=" + ia + " type=" + (s == null ? "<null>" : s.getType()));
+                }
+                plugin.decrementRadioDurability(player);
+            }
+            plugin.runNextTick(() -> {
+                plugin.forceStopTransmitVisuals(player);
+                plugin.refreshHotbarVisualsNow(player);
+            });
         }
     }
 }

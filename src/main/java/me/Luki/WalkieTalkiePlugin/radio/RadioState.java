@@ -11,6 +11,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class RadioState {
+    // Track eavesdrop durability tasks per player
+    private final Map<UUID, Integer> pirateEavesdropTaskIds = new ConcurrentHashMap<>();
 
     private final RadioItemUtil itemUtil;
 
@@ -47,14 +49,44 @@ public final class RadioState {
                 RadioChannel.NIEBIESCY,
                 RadioChannel.HANDLARZE,
                 RadioChannel.PIRACI,
-                RadioChannel.TOHANDLARZE
+                RadioChannel.STREAMCRAFT
         };
         RadioChannel selected = targets[ThreadLocalRandom.current().nextInt(targets.length)];
         eavesdropping.put(playerUuid, selected);
+
+        // Start durability reduction task for pirate radio
+        Player player = org.bukkit.Bukkit.getPlayer(playerUuid);
+        if (player != null && itemUtil.getChannel(player.getInventory().getItemInMainHand()) == RadioChannel.PIRACI_RANDOM) {
+            // Cancel previous task if exists
+            stopPirateEavesdropTask(playerUuid);
+            int taskId = org.bukkit.Bukkit.getScheduler().scheduleSyncRepeatingTask(
+                org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(RadioState.class),
+                () -> {
+                    if (itemUtil.getChannel(player.getInventory().getItemInMainHand()) == RadioChannel.PIRACI_RANDOM && eavesdropping.containsKey(playerUuid)) {
+                        // Reduce durability by 1 every 5 seconds
+                        me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
+                        plugin.decrementRadioDurability(player);
+                    } else {
+                        stopPirateEavesdropTask(playerUuid);
+                    }
+                },
+                100L, // 5 seconds (20 ticks * 5)
+                100L
+            );
+            pirateEavesdropTaskIds.put(playerUuid, taskId);
+        }
     }
 
     public void stopPirateEavesdrop(UUID playerUuid) {
         eavesdropping.remove(playerUuid);
+        stopPirateEavesdropTask(playerUuid);
+    }
+
+    private void stopPirateEavesdropTask(UUID playerUuid) {
+        Integer taskId = pirateEavesdropTaskIds.remove(playerUuid);
+        if (taskId != null) {
+            org.bukkit.Bukkit.getScheduler().cancelTask(taskId);
+        }
     }
 
     public RadioChannel getEavesdroppingChannel(UUID playerUuid) {

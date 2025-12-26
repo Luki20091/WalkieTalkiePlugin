@@ -1,10 +1,9 @@
+
+
 info:
   namespace: radio
 
 items:
-  # OFF / TRANSMIT / LISTEN
-  # The plugin swaps between _0/_1/_2.
-
   radio_czerwoni_0:
     display_name: "&fRadio: &cCzerwonych"
     category: "radios"
@@ -14,21 +13,13 @@ items:
       material: SHEARS
       generate: false
       model_path: item/radio_czerwoni_0
-    recipes:
-      crafting_table:
-        permission: "radio.craft.czerwoni"
-        pattern:
-          - "I I"
-          - "IRI"
-          - " W "
-        ingredients:
-          I: IRON_INGOT
-          R: REDSTONE
-          W: RED_WOOL
     stack_size: 1
-
+    durability:
+      max_durability: 200
+      durablity: 200
   radio_czerwoni_1:
     display_name: "&fRadio: &cCzerwonych"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -36,9 +27,12 @@ items:
       generate: false
       model_path: item/radio_czerwoni_1
     stack_size: 1
-
+    durability:
+      max_durability: 200
+      durablity: 200
   radio_czerwoni_2:
     display_name: "&fRadio: &cCzerwonych"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -46,9 +40,12 @@ items:
       generate: false
       model_path: item/radio_czerwoni_2
     stack_size: 1
+    durability:
+      max_durability: 200
+      durablity: 200
 
   radio_niebiescy_0:
-    display_name: "&fRadio: &9Niebieskich"
+    display_name: "&fRadio: &bNiebieskich"
     category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
@@ -56,21 +53,13 @@ items:
       material: SHEARS
       generate: false
       model_path: item/radio_niebiescy_0
-    recipes:
-      crafting_table:
-        permission: "radio.craft.niebiescy"
-        pattern:
-          - "I I"
-          - "IRI"
-          - " W "
-        ingredients:
-          I: IRON_INGOT
-          R: REDSTONE
-          W: BLUE_WOOL
     stack_size: 1
-
+    durability:
+      max_durability: 200
+      durablity: 200
   radio_niebiescy_1:
-    display_name: "&fRadio: &9Niebieskich"
+    display_name: "&fRadio: &bNiebieskich"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -78,9 +67,12 @@ items:
       generate: false
       model_path: item/radio_niebiescy_1
     stack_size: 1
-
+    durability:
+      max_durability: 200
+      durablity: 200
   radio_niebiescy_2:
-    display_name: "&fRadio: &9Niebieskich"
+    display_name: "&fRadio: &bNiebieskich"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -88,6 +80,9 @@ items:
       generate: false
       model_path: item/radio_niebiescy_2
     stack_size: 1
+    durability:
+      max_durability: 200
+      durablity: 200
 
   radio_handlarze_0:
     display_name: "&fRadio: &eHandlarzy"
@@ -98,21 +93,13 @@ items:
       material: SHEARS
       generate: false
       model_path: item/radio_handlarze_0
-    recipes:
-      crafting_table:
-        permission: "radio.craft.handlarze"
-        pattern:
-          - "I I"
-          - "IRI"
-          - " W "
-        ingredients:
-          I: IRON_INGOT
-          R: REDSTONE
-          W: YELLOW_WOOL
     stack_size: 1
-
+    durability:
+      max_durability: 200
+      durablity: 200
   radio_handlarze_1:
     display_name: "&fRadio: &eHandlarzy"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -120,9 +107,12 @@ items:
       generate: false
       model_path: item/radio_handlarze_1
     stack_size: 1
-
+    durability:
+      max_durability: 200
+      durablity: 200
   radio_handlarze_2:
     display_name: "&fRadio: &eHandlarzy"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -130,9 +120,12 @@ items:
       generate: false
       model_path: item/radio_handlarze_2
     stack_size: 1
+    durability:
+      max_durability: 200
+      durablity: 200
 
   radio_piraci_0:
-    display_name: "&fRadio: &cPiratów"
+    display_name: "&fRadio: &aPiratów"
     category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
@@ -140,21 +133,13 @@ items:
       material: SHEARS
       generate: false
       model_path: item/radio_piraci_0
-    recipes:
-      crafting_table:
-        permission: "radio.craft.piraci"
-        pattern:
-          - "I I"
-          - "IRI"
-          - " W "
-        ingredients:
-          I: IRON_INGOT
-          R: REDSTONE
-          W: GREEN_WOOL
     stack_size: 1
-
+    durability:
+      max_durability: 200
+      durablity: 200
   radio_piraci_1:
-    display_name: "&fRadio: &cPiratów"
+    display_name: "&fRadio: &aPiratów"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -162,9 +147,12 @@ items:
       generate: false
       model_path: item/radio_piraci_1
     stack_size: 1
-
+    durability:
+      max_durability: 200
+      durablity: 200
   radio_piraci_2:
-    display_name: "&fRadio: &cPiratów"
+    display_name: "&fRadio: &aPiratów"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -172,51 +160,52 @@ items:
       generate: false
       model_path: item/radio_piraci_2
     stack_size: 1
+    durability:
+      max_durability: 200
+      durablity: 200
 
-  radio_tohandlarze_0:
-    display_name: "&fRadio: &eDo Handlarzy"
+  radio_streamcraft_0:
+    display_name: "&fRadio: &dDo Handlarzy"
     category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
       material: SHEARS
       generate: false
-      model_path: item/radio_tohandlarze_0
-    recipes:
-      crafting_table:
-        permission: "radio.craft.tohandlarze"
-        pattern:
-          - "I I"
-          - "IRI"
-          - " W "
-        ingredients:
-          I: IRON_INGOT
-          R: REDSTONE
-          W: PURPLE_WOOL
+      model_path: item/radio_streamcraft_0
     stack_size: 1
-
-  radio_tohandlarze_1:
-    display_name: "&fRadio: &eDo Handlarzy"
+    durability:
+      max_durability: 200
+      durablity: 200
+  radio_streamcraft_1:
+    display_name: "&fRadio: &dDo Handlarzy"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
       material: SHEARS
       generate: false
-      model_path: item/radio_tohandlarze_1
+      model_path: item/radio_streamcraft_1
     stack_size: 1
-
-  radio_tohandlarze_2:
-    display_name: "&fRadio: &eDo Handlarzy"
+    durability:
+      max_durability: 200
+      durablity: 200
+  radio_streamcraft_2:
+    display_name: "&fRadio: &dDo Handlarzy"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
       material: SHEARS
       generate: false
-      model_path: item/radio_tohandlarze_2
+      model_path: item/radio_streamcraft_2
     stack_size: 1
+    durability:
+      max_durability: 200
+      durablity: 200
 
   radio_piraci_random_0:
-    display_name: "&fStare Radio: &0Piratów"
+    display_name: "&fStare Radio: Piratów"
     category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
@@ -224,21 +213,13 @@ items:
       material: SHEARS
       generate: false
       model_path: item/radio_piraci_random_0
-    recipes:
-      crafting_table:
-        permission: "radio.craft.randomchannel.piraci"
-        pattern:
-          - "I I"
-          - "IRI"
-          - " W "
-        ingredients:
-          I: IRON_INGOT
-          R: REDSTONE
-          W: BLACK_WOOL
     stack_size: 1
-
+    durability:
+      max_durability: 200
+      durablity: 200
   radio_piraci_random_1:
-    display_name: "&fStare Radio: &0Piratów"
+    display_name: "&fStare Radio: Piratów"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -246,9 +227,12 @@ items:
       generate: false
       model_path: item/radio_piraci_random_1
     stack_size: 1
-
+    durability:
+      max_durability: 200
+      durablity: 200
   radio_piraci_random_2:
-    display_name: "&fStare Radio: &0Piratów"
+    display_name: "&fStare Radio: Piratów"
+    category: "radios"
     lore:
       - '&7Trzymaj w głównej ręce.'
     resource:
@@ -256,3 +240,117 @@ items:
       generate: false
       model_path: item/radio_piraci_random_2
     stack_size: 1
+    durability:
+      max_durability: 200
+      durablity: 200
+
+recipes:
+  crafting_table:
+    radio_czerwoni_0:
+      permission: "radio.craft.czerwoni"
+      enabled: true
+      pattern:
+        - XXI
+        - XWI
+        - XJI
+      pattern_2:
+        - XIX
+        - WIX
+        - JIX
+      ingredients:
+        I: IRON_BLOCK
+        J: JUKEBOX
+        W: RED_WOOL
+      result:
+        item: radio:radio_czerwoni_0
+        amount: 1
+    radio_niebiescy_0:
+      permission: "radio.craft.niebiescy"
+      enabled: true
+      pattern:
+        - XXI
+        - XWI
+        - XJI
+      pattern_2:
+        - XIX
+        - WIX
+        - JIX
+      ingredients:
+        I: IRON_BLOCK
+        J: JUKEBOX
+        W: LIGHT_BLUE_WOOL
+      result:
+        item: radio:radio_niebiescy_0
+        amount: 1
+    radio_handlarze_0:
+      permission: "radio.craft.handlarze"
+      enabled: true
+      pattern:
+        - XXI
+        - XWI
+        - XJI
+      pattern_2:
+        - XIX
+        - WIX
+        - JIX
+      ingredients:
+        I: IRON_BLOCK
+        J: JUKEBOX
+        W: YELLOW_WOOL
+      result:
+        item: radio:radio_handlarze_0
+        amount: 1
+    radio_piraci_0:
+      permission: "radio.craft.piraci"
+      enabled: true
+      pattern:
+        - XXI
+        - XWI
+        - XJI
+      pattern_2:
+        - XIX
+        - WIX
+        - JIX
+      ingredients:
+        I: IRON_BLOCK
+        J: JUKEBOX
+        W: LIME_WOOL
+      result:
+        item: radio:radio_piraci_0
+        amount: 1
+    radio_streamcraft_0:
+      permission: "radio.craft.streamcraft"
+      enabled: true
+      pattern:
+        - XXI
+        - XWI
+        - XJI
+      pattern_2:
+        - XIX
+        - WIX
+        - JIX
+      ingredients:
+        I: IRON_BLOCK
+        J: JUKEBOX
+        W: MAGENTA_WOOL
+      result:
+        item: radio:radio_streamcraft_0
+        amount: 1
+    radio_piraci_random_0:
+      permission: "radio.craft.randomchannel.piraci"
+      enabled: true
+      pattern:
+        - XXI
+        - XWI
+        - XJI
+      pattern_2:
+        - XIX
+        - WIX
+        - JIX
+      ingredients:
+        I: IRON_BLOCK
+        J: JUKEBOX
+        W: WHITE_WOOL
+      result:
+        item: radio:radio_piraci_random_0
+        amount: 1

@@ -23,8 +23,6 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
-
-// Paper-only events may be available; we keep them reflective-safe by using PlayerInteractEvent fallback later.
 import org.bukkit.event.player.PlayerKickEvent;
 import java.util.Map;
 import java.util.UUID;
@@ -173,7 +171,9 @@ public final class RadioListeners implements Listener {
             if (itemUtil.isRadio(cursor)) {
                 var normalized = plugin.normalizeTalkingVariantToBase(cursor);
                 if (normalized != null) {
-                    event.setCursor(normalized);
+                    if (event.getWhoClicked() instanceof Player p) {
+                        p.setItemOnCursor(normalized); // force OFF variant on cursor creative drags
+                    }
                 }
             }
         } catch (Throwable ignored) {
@@ -249,7 +249,9 @@ public final class RadioListeners implements Listener {
             if (itemUtil.isRadio(cursor)) {
                 var normalized = plugin.normalizeTalkingVariantToBase(cursor);
                 if (normalized != null) {
-                    event.setCursor(normalized);
+                    if (event.getWhoClicked() instanceof Player p) {
+                        p.setItemOnCursor(normalized);
+                    }
                 }
             }
         } catch (Throwable ignored) {
@@ -360,6 +362,7 @@ public final class RadioListeners implements Listener {
                 var stack = entity.getItemStack();
                 var normalized = plugin.normalizeTalkingVariantToBase(stack);
                 if (normalized != null) {
+                    plugin.syncRadioDurability(stack, normalized);
                     entity.setItemStack(normalized);
                 }
             }
@@ -385,6 +388,7 @@ public final class RadioListeners implements Listener {
                 var stack = drops.get(i);
                 var normalized = plugin.normalizeTalkingVariantToBase(stack);
                 if (normalized != null) {
+                    plugin.syncRadioDurability(stack, normalized);
                     drops.set(i, normalized);
                 }
             }
@@ -408,6 +412,7 @@ public final class RadioListeners implements Listener {
             var stack = itemEntity.getItemStack();
             var normalized = plugin.normalizeTalkingVariantToBase(stack);
             if (normalized != null) {
+                plugin.syncRadioDurability(stack, normalized);
                 itemEntity.setItemStack(normalized);
             }
 
@@ -479,6 +484,38 @@ public final class RadioListeners implements Listener {
 
             updatePirateEavesdropForMainHand(player);
         });
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onRadioInteract(org.bukkit.event.player.PlayerInteractEvent event) {
+        org.bukkit.entity.Player player = event.getPlayer();
+        org.bukkit.inventory.ItemStack item = player.getInventory().getItemInMainHand();
+        if (!itemUtil.isRadio(item)) return;
+
+        // Blokuj PRAWE kliknięcie (nadawanie) oraz LEWE kliknięcie (np. atak), ale nie blokuj innych akcji (np. scroll, drop)
+        org.bukkit.event.block.Action action = event.getAction();
+        switch (action) {
+            case RIGHT_CLICK_BLOCK:
+            case RIGHT_CLICK_AIR:
+            case LEFT_CLICK_BLOCK:
+            case LEFT_CLICK_AIR:
+                event.setCancelled(true);
+                break;
+            default:
+                // nie blokuj innych akcji
+        }
+    }
+
+    // Blokuj użycie radia na owcach (strzyżenie)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onRadioEntityInteract(org.bukkit.event.player.PlayerInteractEntityEvent event) {
+        org.bukkit.entity.Player player = event.getPlayer();
+        org.bukkit.inventory.ItemStack item = player.getInventory().getItemInMainHand();
+        if (!itemUtil.isRadio(item)) return;
+        // Jeśli kliknięto owcę radiem, anuluj event (blokuje strzyżenie)
+        if (event.getRightClicked() instanceof org.bukkit.entity.Sheep) {
+            event.setCancelled(true);
+        }
     }
 
     // NOTE: Hold-to-talk is implemented using Paper start/stop using item events.

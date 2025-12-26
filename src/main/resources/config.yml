@@ -46,7 +46,7 @@ radios:
   niebiescy: "radio:radio_niebiescy"
   handlarze: "radio:radio_handlarze"
   piraci: "radio:radio_piraci"
-  tohandlarze: "radio:radio_tohandlarze"
+  streamcraft: "radio:radio_streamcraft"
   piraci_random: "radio:radio_piraci_random"
 
 # Feedback sounds

@@ -10,6 +10,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.ItemStack;
 
 // Paper API event
 import io.papermc.paper.event.player.PlayerStopUsingItemEvent;
@@ -61,13 +62,16 @@ public final class RadioHoldToTalkPaperListener implements Listener {
             plugin.getRadioState().startPirateEavesdrop(player.getUniqueId());
             plugin.playFeedbackSound(player, "sounds.start");
             plugin.playConfiguredNotification(player, "notifications.eavesdrop.start");
-            plugin.refreshHotbarVisualsNow(player);
+            // Synchronizuj durability po zmianie wariantu
+            plugin.runNextTick(() -> plugin.refreshHotbarVisualsNow(player));
             return;
         }
         RadioChannel already = plugin.getRadioState().getTransmittingChannel(player.getUniqueId());
         if (already == channel) {
             return;
         }
+        // Synchronizuj durability po zmianie wariantu (bez zmiany durability na starcie)
+        plugin.runNextTick(() -> plugin.refreshHotbarVisualsNow(player));
         plugin.getRadioState().setTransmitting(player.getUniqueId(), channel);
         plugin.setHoldToTalkActive(player.getUniqueId(), true);
         // filterLong is LISTEN/eavesdrop-only; ensure it is not audible during transmit.
@@ -85,13 +89,17 @@ public final class RadioHoldToTalkPaperListener implements Listener {
         RadioChannel previousTransmit = plugin.getRadioState().getTransmittingChannel(player.getUniqueId());
         RadioChannel previousEavesdropTarget = plugin.getRadioState().getEavesdroppingChannel(player.getUniqueId());
 
+        boolean endedTransmit = false;
+        boolean endedEavesdrop = false;
         if (plugin.getRadioState().getTransmittingChannel(player.getUniqueId()) != null) {
             plugin.getRadioState().setTransmitting(player.getUniqueId(), null);
             changed = true;
+            endedTransmit = true;
         }
         if (plugin.getRadioState().getEavesdroppingChannel(player.getUniqueId()) != null) {
             plugin.getRadioState().stopPirateEavesdrop(player.getUniqueId());
             changed = true;
+            endedEavesdrop = true;
         }
 
         if (changed) {
@@ -107,11 +115,23 @@ public final class RadioHoldToTalkPaperListener implements Listener {
                 plugin.playConfiguredNotification(player, "notifications.eavesdrop.stop");
             }
 
-            // Ensure transmit visuals can't get stuck in _1 after releasing the item.
-            plugin.runNextTick(() -> plugin.forceStopTransmitVisuals(player));
-
-            // Ensure pirate eavesdrop visuals clear back to OFF.
-            plugin.runNextTick(() -> plugin.refreshHotbarVisualsNow(player));
+            // Najpierw zakończ tryb TRANSMIT (przywróć OFF)
+            final boolean endedTransmitFinal = endedTransmit;
+            final boolean endedEavesdropFinal = endedEavesdrop;
+            // Odbierz durability na itemie w main hand gracza przed zmianą wariantu
+            if ((endedTransmitFinal || endedEavesdropFinal)) {
+                // Debug: log item state just before decrement
+                if (plugin.isDevMode()) {
+                    ItemStack s = player.getInventory().getItemInMainHand();
+                    String ia = plugin.getItemUtil() != null ? plugin.getItemUtil().debugGetItemsAdderId(s) : "<no-ia>";
+                    plugin.getLogger().info("[WT-DEBUG] onStopUsing about to decrement radio for " + player.getName() + " ia=" + ia + " type=" + (s == null ? "<null>" : s.getType()));
+                }
+                plugin.decrementRadioDurability(player);
+            }
+            plugin.runNextTick(() -> {
+                plugin.forceStopTransmitVisuals(player);
+                plugin.refreshHotbarVisualsNow(player);
+            });
         }
     }
 }

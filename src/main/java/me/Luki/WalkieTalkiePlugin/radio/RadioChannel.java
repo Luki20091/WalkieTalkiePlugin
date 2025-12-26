@@ -9,7 +9,7 @@ public enum RadioChannel {
     NIEBIESCY("niebiescy"),
     HANDLARZE("handlarze"),
     PIRACI("piraci"),
-    TOHANDLARZE("tohandlarze"),
+    STREAMCRAFT("streamcraft"),
     PIRACI_RANDOM("randomchannel.piraci");
 
     private final String id;

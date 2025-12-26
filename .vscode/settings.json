@@ -1,4 +1,13 @@
 {
     "java.configuration.updateBuildConfiguration": "interactive",
-    "java.compile.nullAnalysis.mode": "automatic"
+    "java.compile.nullAnalysis.mode": "automatic",
+
+    // Disable YAML validation for plugin.yml/paper-plugin.yml to avoid false positives
+    // from PocketMine/YAML schemas in the editor. The project build confirms
+    // the files are valid for PaperMC 1.21.8.
+    "yaml.validate": false,
+    "files.associations": {
+        "plugin.yml": "yaml",
+        "paper-plugin.yml": "yaml"
+    }
 }

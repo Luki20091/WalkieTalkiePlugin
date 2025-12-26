@@ -25,7 +25,7 @@ public final class RadioRegistry {
         register(radiosSection, RadioChannel.NIEBIESCY, "Radio Niebieskich", "niebiescy");
         register(radiosSection, RadioChannel.HANDLARZE, "Radio Handlarzy", "handlarze");
         register(radiosSection, RadioChannel.PIRACI, "Radio Piratów", "piraci");
-        register(radiosSection, RadioChannel.TOHANDLARZE, "Radio Do Handlarzy", "tohandlarze");
+        register(radiosSection, RadioChannel.STREAMCRAFT, "StreamCraft", "streamcraft");
         register(radiosSection, RadioChannel.PIRACI_RANDOM, "Stare Radio Piratów", "piraci_random");
 
         for (RadioDefinition def : definitions.values()) {
