@@ -150,6 +150,11 @@ public final class RadioListeners implements Listener {
             plugin.refreshPermissionCache(player);
             plugin.refreshPreferredListenChannel(player);
 
+            // Re-evaluate pirate eavesdrop when swapping hands (F key).
+            try {
+                updatePirateEavesdropForMainHand(player);
+            } catch (Throwable ignored) {}
+
             // Keep internal tracking consistent (used for hotbar switch sounds only).
             RadioChannel inHand = itemUtil.getChannel(player.getInventory().getItemInMainHand());
             if (inHand != null) {
@@ -161,6 +166,7 @@ public final class RadioListeners implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
+    @SuppressWarnings("deprecation")
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
@@ -180,9 +186,7 @@ public final class RadioListeners implements Listener {
             if (itemUtil.isRadio(cursor)) {
                 var normalized = plugin.normalizeTalkingVariantToBase(cursor);
                 if (normalized != null) {
-                    if (event.getWhoClicked() instanceof Player p) {
-                        p.setItemOnCursor(normalized); // force OFF variant on cursor creative drags
-                    }
+                    event.setCursor(normalized); // force OFF variant on cursor
                 }
             }
         } catch (Throwable ignored) {
@@ -258,9 +262,7 @@ public final class RadioListeners implements Listener {
             if (itemUtil.isRadio(cursor)) {
                 var normalized = plugin.normalizeTalkingVariantToBase(cursor);
                 if (normalized != null) {
-                    if (event.getWhoClicked() instanceof Player p) {
-                        p.setItemOnCursor(normalized);
-                    }
+                    event.setCursor(normalized);
                 }
             }
         } catch (Throwable ignored) {
