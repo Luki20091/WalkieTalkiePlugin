@@ -3,6 +3,7 @@ package me.Luki.WalkieTalkiePlugin.items;
 import org.bukkit.inventory.ItemStack;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Field;
 
 /**
  * Reflection-based bridge for ItemsAdder.
@@ -164,6 +165,79 @@ public final class ItemsAdderBridge {
                 }
             }
             return 0;
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    /**
+     * Best-effort: return configured max durability for a given ItemsAdder id.
+     * Returns 0 if unknown.
+     */
+    public int getMaxDurabilityForId(String id) {
+        if (!available || id == null || id.isBlank()) return 0;
+        try {
+            Object customStack;
+            if (getInstanceStringInt != null) {
+                customStack = getInstanceStringInt.invoke(null, id, 1);
+            } else {
+                customStack = getInstanceString.invoke(null, id);
+            }
+            if (customStack == null) return 0;
+
+            // Try common getter method names
+            String[] candidates = new String[] {"getMaxDurability", "getDefaultMaxDurability", "getDurability", "getDefaultDurability", "getMaxDurabilityValue", "getDurabilityMax"};
+            for (String name : candidates) {
+                Method m = findAnyMethod(customStack.getClass(), name);
+                if (m != null) {
+                    try {
+                        Object v = m.invoke(customStack);
+                        int parsed = parseIntSafe(v);
+                        if (parsed > 0) return parsed;
+                    } catch (Throwable ignored) {
+                        // try next
+                    }
+                }
+            }
+
+            // Try a config/value map exposed by the CustomStack
+            Method cfgM = findAnyMethod(customStack.getClass(), "getConfig", "getValues", "getData");
+            if (cfgM != null) {
+                try {
+                    Object cfg = cfgM.invoke(customStack);
+                    if (cfg instanceof java.util.Map<?, ?> map) {
+                        Object v = map.get("max_durability");
+                        if (v == null) v = map.get("durability");
+                        if (v == null) v = map.get("durablity");
+                        int parsed = parseIntSafe(v);
+                        if (parsed > 0) return parsed;
+                    }
+                } catch (Throwable ignored) {
+                    // ignore
+                }
+            }
+
+            // Try reading simple numeric fields
+            for (Field f : customStack.getClass().getDeclaredFields()) {
+                try {
+                    f.setAccessible(true);
+                    Object v = f.get(customStack);
+                    int parsed = parseIntSafe(v);
+                    if (parsed > 0) return parsed;
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable ignored) {
+            return 0;
+        }
+        return 0;
+    }
+
+    private static int parseIntSafe(Object v) {
+        if (v == null) return 0;
+        if (v instanceof Number n) return n.intValue();
+        try {
+            return Integer.parseInt(String.valueOf(v).trim());
         } catch (Throwable ignored) {
             return 0;
         }

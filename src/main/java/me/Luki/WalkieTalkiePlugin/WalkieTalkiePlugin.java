@@ -61,13 +61,57 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             org.bukkit.inventory.meta.Damageable damageable = (org.bukkit.inventory.meta.Damageable) meta;
             int current = damageable.getDamage();
             int max = stack.getType().getMaxDurability();
-            if (isDevMode()) getLogger().info("[WT-DEBUG] currentDamage=" + current + " max=" + max);
+            String iaId = "<none>";
+            int iaMax = 0;
+            // If ItemsAdder provides a configured max durability for this custom id, prefer it.
+            try {
+                if (itemsAdder != null && itemsAdder.isAvailable()) {
+                    iaId = itemsAdder.getCustomId(stack);
+                    iaMax = itemsAdder.getMaxDurabilityForId(iaId);
+                    if (iaMax > 0) {
+                        max = iaMax;
+                    }
+                }
+            } catch (Throwable t) {
+                if (isDevMode()) t.printStackTrace();
+            }
+            if (isDevMode()) getLogger().info("[WT-DEBUG] iaId=" + iaId + " iaMax=" + iaMax + " currentDamage=" + current + " resolvedMax=" + max);
+
+            int newDamage = current + 1;
             if (current < max) {
-                damageable.setDamage(current + 1);
+                damageable.setDamage(newDamage);
                 stack.setItemMeta(meta);
-                if (isDevMode()) getLogger().info("[WT-DEBUG] Durability decremented (new=" + (current + 1) + ")");
+                // Ensure inventory holds the mutated ItemStack instance.
+                try {
+                    player.getInventory().setItemInMainHand(stack);
+                } catch (Throwable ignored) {
+                }
+                if (isDevMode()) getLogger().info("[WT-DEBUG] Durability decremented (new=" + newDamage + ") for ia=" + iaId);
+
+                // If we've reached or exceeded the configured max, force removal and play break sound.
+                if (newDamage >= max) {
+                    try {
+                        if (isDevMode()) getLogger().info("[WT-DEBUG] Reached max durability, forcing removal of item in main hand ia=" + iaId);
+                        player.getInventory().setItemInMainHand(new org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR));
+                        try {
+                            player.getWorld().playSound(player.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0f, 1.0f);
+                        } catch (Throwable ignoredSound) {
+                        }
+                    } catch (Throwable t) {
+                        if (isDevMode()) t.printStackTrace();
+                    }
+                }
             } else {
-                if (isDevMode()) getLogger().info("[WT-DEBUG] Damage at or above max; not decremented.");
+                if (isDevMode()) getLogger().info("[WT-DEBUG] Damage at or above max; forcing removal ia=" + iaId);
+                try {
+                    player.getInventory().setItemInMainHand(new org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR));
+                    try {
+                        player.getWorld().playSound(player.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0f, 1.0f);
+                    } catch (Throwable ignored) {
+                    }
+                } catch (Throwable t) {
+                    if (isDevMode()) t.printStackTrace();
+                }
             }
         }
     /**
@@ -1698,6 +1742,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     public RadioItemUtil getItemUtil() {
         return itemUtil;
     }
+
+    // syncDamageToAllVariants removed: do not copy damage across inventory variants.
 
     public RadioChannel getTransmitChannel(Player player) {
         return getTransmitChannelFast(player);
