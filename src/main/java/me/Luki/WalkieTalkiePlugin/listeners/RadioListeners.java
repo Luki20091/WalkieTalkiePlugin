@@ -47,7 +47,11 @@ public final class RadioListeners implements Listener {
         boolean hasPirateListenPerm = player.hasPermission(RadioChannel.PIRACI_RANDOM.listenPermission());
         boolean wantsEavesdrop = inHand == RadioChannel.PIRACI_RANDOM && hasPirateListenPerm;
 
-        plugin.getLogger().info("[WT-DEBUG] updatePirateEavesdrop player=" + player.getName() + " inHand=" + (inHand == null ? "<none>" : inHand.id()) + " hasPerm=" + hasPirateListenPerm + " wasEavesdropping=" + wasEavesdropping + " wantsEavesdrop=" + wantsEavesdrop);
+        try {
+            if (plugin.isDevMode() || plugin.getConfig().getBoolean("debug.enabled", false)) {
+                plugin.getLogger().info("[WT-DEBUG] updatePirateEavesdrop player=" + player.getName() + " inHand=" + (inHand == null ? "<none>" : inHand.id()) + " hasPerm=" + hasPirateListenPerm + " wasEavesdropping=" + wasEavesdropping + " wantsEavesdrop=" + wantsEavesdrop);
+            }
+        } catch (Throwable ignored) {}
 
         boolean changed = false;
 
@@ -83,7 +87,7 @@ public final class RadioListeners implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
 
-        plugin.getLogger().info("[WT-DEBUG] PlayerJoin: " + player.getName() + " uuid=" + player.getUniqueId());
+        try { if (plugin.isDevMode() || plugin.getConfig().getBoolean("debug.enabled", false)) plugin.getLogger().info("[WT-DEBUG] PlayerJoin: " + player.getName() + " uuid=" + player.getUniqueId()); } catch (Throwable ignored) {}
 
         plugin.markPlayerOnline(player.getUniqueId());
 
@@ -111,7 +115,7 @@ public final class RadioListeners implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        plugin.getLogger().info("[WT-DEBUG] PlayerQuit: " + event.getPlayer().getName() + " uuid=" + event.getPlayer().getUniqueId());
+        try { if (plugin.isDevMode() || plugin.getConfig().getBoolean("debug.enabled", false)) plugin.getLogger().info("[WT-DEBUG] PlayerQuit: " + event.getPlayer().getName() + " uuid=" + event.getPlayer().getUniqueId()); } catch (Throwable ignored) {}
         plugin.markPlayerOffline(event.getPlayer().getUniqueId());
         plugin.normalizeTalkingVariantInMainHand(event.getPlayer(), true);
         plugin.releaseBusyLineIfOwned(event.getPlayer().getUniqueId());
@@ -449,7 +453,7 @@ public final class RadioListeners implements Listener {
     public void onItemHeld(PlayerItemHeldEvent event) {
         Player player = event.getPlayer();
         plugin.runNextTick(() -> {
-            plugin.getLogger().info("[WT-DEBUG] ItemHeld event for " + player.getName() + " from=" + event.getPreviousSlot() + " to=" + event.getNewSlot());
+            try { if (plugin.isDevMode() || plugin.getConfig().getBoolean("debug.enabled", false)) plugin.getLogger().info("[WT-DEBUG] ItemHeld event for " + player.getName() + " from=" + event.getPreviousSlot() + " to=" + event.getNewSlot()); } catch (Throwable ignored) {}
             plugin.getRadioState().refreshHotbar(player);
             plugin.refreshTransmitCache(player);
             plugin.refreshPermissionCache(player);

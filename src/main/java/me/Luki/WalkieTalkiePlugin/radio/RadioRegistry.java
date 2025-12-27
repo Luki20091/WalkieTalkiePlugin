@@ -1,6 +1,8 @@
 package me.Luki.WalkieTalkiePlugin.radio;
 
+import me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -49,7 +51,16 @@ public final class RadioRegistry {
             itemsAdderIdToChannel.put((base + "_2").toLowerCase(Locale.ROOT), def.channel());
         }
         try {
-            org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] RadioRegistry.reload built itemsAdderId map size=" + itemsAdderIdToChannel.size());
+            var plugin = (WalkieTalkiePlugin) JavaPlugin.getProvidingPlugin(WalkieTalkiePlugin.class);
+            if (plugin != null) {
+                if (plugin.isDevMode() || plugin.getConfig().getBoolean("debug.enabled", false)) {
+                    plugin.getLogger().info("[WT-DEBUG] RadioRegistry.reload built itemsAdderId map size=" + itemsAdderIdToChannel.size());
+                }
+            } else {
+                if (Boolean.getBoolean("walkietalkie.debug")) {
+                    org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] RadioRegistry.reload built itemsAdderId map size=" + itemsAdderIdToChannel.size());
+                }
+            }
         } catch (Throwable ignored) {
         }
     }

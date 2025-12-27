@@ -70,7 +70,16 @@ public final class ItemsAdderBridge {
 
         this.getCustomModelData = cmd;
         try {
-            org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] ItemsAdderBridge available=" + this.available + " byItemStack=" + (byItem != null) + " getNamespacedId=" + (nsId != null) + " getId=" + (id != null) + " instanceString=" + (instS != null) + " instanceStringInt=" + (instSI != null) + " getItemStack=" + (itemStack != null) + " getCustomModelData=" + (cmd != null));
+            var plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
+            if (plugin != null) {
+                if (plugin.isDevMode() || plugin.getConfig().getBoolean("debug.enabled", false)) {
+                    plugin.getLogger().info("[WT-DEBUG] ItemsAdderBridge available=" + this.available + " byItemStack=" + (byItem != null) + " getNamespacedId=" + (nsId != null) + " getId=" + (id != null) + " instanceString=" + (instS != null) + " instanceStringInt=" + (instSI != null) + " getItemStack=" + (itemStack != null) + " getCustomModelData=" + (cmd != null));
+                }
+            } else {
+                if (Boolean.getBoolean("walkietalkie.debug")) {
+                    org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] ItemsAdderBridge available=" + this.available + " byItemStack=" + (byItem != null) + " getNamespacedId=" + (nsId != null) + " getId=" + (id != null) + " instanceString=" + (instS != null) + " instanceStringInt=" + (instSI != null) + " getItemStack=" + (itemStack != null) + " getCustomModelData=" + (cmd != null));
+                }
+            }
         } catch (Throwable ignored) {
         }
     }
@@ -104,7 +113,16 @@ public final class ItemsAdderBridge {
             }
             return null;
         } catch (Throwable ignored) {
-            try { org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] ItemsAdderBridge.getCustomId threw: " + ignored.getClass().getSimpleName() + ": " + ignored.getMessage()); } catch (Throwable ignored2) {}
+            try {
+                var plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
+                if (plugin != null) {
+                    if (plugin.isDevMode() || plugin.getConfig().getBoolean("debug.enabled", false)) {
+                        plugin.getLogger().info("[WT-DEBUG] ItemsAdderBridge.getCustomId threw: " + ignored.getClass().getSimpleName() + ": " + ignored.getMessage());
+                    }
+                } else {
+                    if (Boolean.getBoolean("walkietalkie.debug")) org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] ItemsAdderBridge.getCustomId threw: " + ignored.getClass().getSimpleName() + ": " + ignored.getMessage());
+                }
+            } catch (Throwable ignored2) {}
             return null;
         }
     }
@@ -132,7 +150,16 @@ public final class ItemsAdderBridge {
             }
             return null;
         } catch (Throwable ignored) {
-            try { org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] ItemsAdderBridge.createItemStack(" + id + ") threw: " + ignored.getClass().getSimpleName() + ": " + ignored.getMessage()); } catch (Throwable ignored2) {}
+            try {
+                var plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
+                if (plugin != null) {
+                    if (plugin.isDevMode() || plugin.getConfig().getBoolean("debug.enabled", false)) {
+                        plugin.getLogger().info("[WT-DEBUG] ItemsAdderBridge.createItemStack(" + id + ") threw: " + ignored.getClass().getSimpleName() + ": " + ignored.getMessage());
+                    }
+                } else {
+                    if (Boolean.getBoolean("walkietalkie.debug")) org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] ItemsAdderBridge.createItemStack(" + id + ") threw: " + ignored.getClass().getSimpleName() + ": " + ignored.getMessage());
+                }
+            } catch (Throwable ignored2) {}
             return null;
         }
     }
@@ -172,7 +199,16 @@ public final class ItemsAdderBridge {
             }
             return 0;
         } catch (Throwable ignored) {
-            try { org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] ItemsAdderBridge.getMaxDurabilityForId(" + id + ") threw: " + ignored.getClass().getSimpleName() + ": " + ignored.getMessage()); } catch (Throwable ignored2) {}
+            try {
+                var plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
+                if (plugin != null) {
+                    if (plugin.isDevMode() || plugin.getConfig().getBoolean("debug.enabled", false)) {
+                        plugin.getLogger().info("[WT-DEBUG] ItemsAdderBridge.getMaxDurabilityForId(" + id + ") threw: " + ignored.getClass().getSimpleName() + ": " + ignored.getMessage());
+                    }
+                } else {
+                    if (Boolean.getBoolean("walkietalkie.debug")) org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] ItemsAdderBridge.getMaxDurabilityForId(" + id + ") threw: " + ignored.getClass().getSimpleName() + ": " + ignored.getMessage());
+                }
+            } catch (Throwable ignored2) {}
             return 0;
         }
     }

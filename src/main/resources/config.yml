@@ -28,7 +28,7 @@ svc:
   # If receiver is closer (and is allowed to hear), we don't send radio to avoid overlap;
   # SVC proximity voice can handle it.
   # Set to 0 to always deliver radio.
-  radioMinDistanceBlocks: 40.0
+  radioMinDistanceBlocks: 50.0
   # Make radio audio slightly positional to give a subtle attenuation/"fade" effect.
   # Implementation: sends radio as a LocationalSoundPacket positioned a few blocks towards the sender.
   radioSpatial:
