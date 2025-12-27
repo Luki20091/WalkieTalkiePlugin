@@ -2,7 +2,7 @@
 # Minecraft: 1.21.8
 
 # Developer mode (enables extra debug logging)
-dev: true
+dev: false
 
 # Nadawanie radiem: trzymaj radio w main hand + użyj PTT w Simple Voice Chat.
 
@@ -28,13 +28,13 @@ svc:
   # If receiver is closer (and is allowed to hear), we don't send radio to avoid overlap;
   # SVC proximity voice can handle it.
   # Set to 0 to always deliver radio.
-  radioMinDistanceBlocks: 100.0
+  radioMinDistanceBlocks: 40.0
   # Make radio audio slightly positional to give a subtle attenuation/"fade" effect.
   # Implementation: sends radio as a LocationalSoundPacket positioned a few blocks towards the sender.
   radioSpatial:
     enabled: true
     # How far from the receiver the perceived source is placed (towards the sender)
-    offsetBlocks: 5.0
+    offsetBlocks: 0.0
     # Max hearing distance for the locational packet (must be > offsetBlocks)
     distanceBlocks: 8.0
 
@@ -79,7 +79,6 @@ sounds:
     sound: "block.sand.place"
     volume: 0.4
     pitch: 0.8
-
   # Played once when putting away a radio (switching away from a radio)
   holster:
     enabled: false
@@ -221,5 +220,5 @@ hints:
 
 # Debugger / diagnostyka
 debug:
-  enabled: true
+  enabled: false
   logIntervalMs: 10000

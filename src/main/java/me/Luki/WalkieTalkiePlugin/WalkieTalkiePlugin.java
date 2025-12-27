@@ -722,12 +722,17 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             return false;
         }
 
-        // Pirate eavesdrop: receiver listens to a random chosen channel while holding pirate radio.
+        // Pirate eavesdrop: receiver listens while holding pirate radio.
+        // The pirate radio now acts as a wildcard: it can catch any transmitting channel.
         RadioChannel eavesdropTarget = radioState != null ? radioState.getEavesdroppingChannel(receiverUuid) : null;
-        if (eavesdropTarget != null && eavesdropTarget == transmitting) {
-            boolean res = snapshot.hasPirateRandomUse && snapshot.hasListenPermission(transmitting);
-            try { debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id() + " result=" + res + " (eavesdrop match)"); } catch (Throwable ignored) {}
-            return res;
+        if (eavesdropTarget != null) {
+            boolean isWildcard = eavesdropTarget == RadioChannel.PIRACI_RANDOM;
+            boolean match = isWildcard || eavesdropTarget == transmitting;
+            if (match) {
+                boolean res = snapshot.hasPirateRandomUse && snapshot.hasListenPermission(transmitting);
+                try { debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id() + " result=" + res + " (eavesdrop match)"); } catch (Throwable ignored) {}
+                return res;
+            }
         }
 
         if (!snapshot.hasListenPermission(transmitting)) {

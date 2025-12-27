@@ -5,7 +5,6 @@ import org.bukkit.entity.Player;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,16 +42,10 @@ public final class RadioState {
     }
 
     public void startPirateEavesdrop(UUID playerUuid) {
-        // Pick a random target channel to listen to (excluding PIRACI_RANDOM itself)
-        RadioChannel[] targets = new RadioChannel[]{
-                RadioChannel.CZERWONI,
-                RadioChannel.NIEBIESCY,
-                RadioChannel.HANDLARZE,
-                RadioChannel.PIRACI,
-                RadioChannel.STREAMCRAFT
-        };
-        RadioChannel selected = targets[ThreadLocalRandom.current().nextInt(targets.length)];
-        eavesdropping.put(playerUuid, selected);
+        // Old pirate radio: listen to all channels simultaneously while held.
+        // Represent this by storing the PIRACI_RANDOM marker so checks elsewhere
+        // can treat it as a wildcard (match any transmitting channel).
+        eavesdropping.put(playerUuid, RadioChannel.PIRACI_RANDOM);
 
         // Start durability reduction task for pirate radio
         Player player = org.bukkit.Bukkit.getPlayer(playerUuid);
