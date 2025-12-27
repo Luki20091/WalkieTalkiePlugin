@@ -712,31 +712,32 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             return false;
         }
 
-        // If multiple radios are in hotbar, we only listen to a single selected channel:
-        // the first radio found in hotbar excluding the main-hand slot.
-        RadioChannel preferred = preferredListenChannelByPlayer.get(receiverUuid);
-        if (preferred != null && preferred != transmitting) {
-            // Pirate random eavesdrop is handled below.
-            return false;
-        }
+        // NOTE: allow listening to multiple channels simultaneously if the player
+        // has the corresponding radio in their hotbar. `preferredListenChannelByPlayer`
+        // is only used for visuals/selection and must not prevent actual audio delivery.
 
         PermissionSnapshot snapshot = permissionSnapshots.get(receiverUuid);
         if (snapshot == null) {
+            try { debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id() + " result=false (no snapshot)"); } catch (Throwable ignored) {}
             return false;
         }
 
         // Pirate eavesdrop: receiver listens to a random chosen channel while holding pirate radio.
         RadioChannel eavesdropTarget = radioState != null ? radioState.getEavesdroppingChannel(receiverUuid) : null;
         if (eavesdropTarget != null && eavesdropTarget == transmitting) {
-            // Require both: permission to use pirate eavesdrop feature AND permission to listen to the target channel.
-            // This prevents eavesdrop from bypassing per-channel listen permissions.
-            return snapshot.hasPirateRandomUse && snapshot.hasListenPermission(transmitting);
+            boolean res = snapshot.hasPirateRandomUse && snapshot.hasListenPermission(transmitting);
+            try { debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id() + " result=" + res + " (eavesdrop match)"); } catch (Throwable ignored) {}
+            return res;
         }
 
         if (!snapshot.hasListenPermission(transmitting)) {
+            try { debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id() + " result=false (no listen perm)"); } catch (Throwable ignored) {}
             return false;
         }
-        return radioState != null && radioState.hasHotbarRadio(receiverUuid, transmitting);
+
+        boolean hasHotbar = radioState != null && radioState.hasHotbarRadio(receiverUuid, transmitting);
+        try { debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id() + " result=" + hasHotbar + " (hotbar=" + hasHotbar + ") :: " + debugExplainListenDecision(receiverUuid, transmitting)); } catch (Throwable ignored) {}
+        return hasHotbar;
     }
 
     public void refreshPreferredListenChannel(Player player) {
@@ -2060,6 +2061,22 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     private void maybeNotifyPermission(Player player, RadioChannel channel, String path, Map<UUID, Long> lastMap) {
         if (player == null || channel == null || path == null || path.isBlank() || lastMap == null) {
+            return;
+        }
+
+        // Only notify if the player is actively holding the relevant radio in main hand.
+        // This prevents spurious "no listen/no transmit" messages on unrelated hotbar changes.
+        try {
+            if (itemUtil != null) {
+                RadioChannel held = itemUtil.getChannel(player.getInventory().getItemInMainHand());
+                if (held != channel) {
+                    return;
+                }
+            } else {
+                // If itemUtil unavailable, avoid noisy notifications.
+                return;
+            }
+        } catch (Throwable ignored) {
             return;
         }
 

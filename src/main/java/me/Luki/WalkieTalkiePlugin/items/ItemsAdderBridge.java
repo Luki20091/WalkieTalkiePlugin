@@ -69,6 +69,10 @@ public final class ItemsAdderBridge {
         this.getItemStack = itemStack;
 
         this.getCustomModelData = cmd;
+        try {
+            org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] ItemsAdderBridge available=" + this.available + " byItemStack=" + (byItem != null) + " getNamespacedId=" + (nsId != null) + " getId=" + (id != null) + " instanceString=" + (instS != null) + " instanceStringInt=" + (instSI != null) + " getItemStack=" + (itemStack != null) + " getCustomModelData=" + (cmd != null));
+        } catch (Throwable ignored) {
+        }
     }
 
     public boolean isAvailable() {
@@ -100,6 +104,7 @@ public final class ItemsAdderBridge {
             }
             return null;
         } catch (Throwable ignored) {
+            try { org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] ItemsAdderBridge.getCustomId threw: " + ignored.getClass().getSimpleName() + ": " + ignored.getMessage()); } catch (Throwable ignored2) {}
             return null;
         }
     }
@@ -127,6 +132,7 @@ public final class ItemsAdderBridge {
             }
             return null;
         } catch (Throwable ignored) {
+            try { org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] ItemsAdderBridge.createItemStack(" + id + ") threw: " + ignored.getClass().getSimpleName() + ": " + ignored.getMessage()); } catch (Throwable ignored2) {}
             return null;
         }
     }
@@ -166,6 +172,7 @@ public final class ItemsAdderBridge {
             }
             return 0;
         } catch (Throwable ignored) {
+            try { org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] ItemsAdderBridge.getMaxDurabilityForId(" + id + ") threw: " + ignored.getClass().getSimpleName() + ": " + ignored.getMessage()); } catch (Throwable ignored2) {}
             return 0;
         }
     }

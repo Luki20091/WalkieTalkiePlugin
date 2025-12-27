@@ -109,10 +109,25 @@ public final class RadioState {
         }
         // Store as an immutable set to avoid accidental mutation across threads.
         hotbarCache.put(player.getUniqueId(), Collections.unmodifiableSet(channels));
+        try {
+            var plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
+            if (plugin != null && plugin.isDevMode()) {
+                plugin.getLogger().info("[WT-DEBUG] refreshHotbar player=" + player.getName() + " channels=" + channels);
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     public boolean hasHotbarRadio(UUID playerUuid, RadioChannel channel) {
         Set<RadioChannel> channels = hotbarCache.get(playerUuid);
-        return channels != null && channels.contains(channel);
+        boolean res = channels != null && channels.contains(channel);
+        try {
+            var plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
+            if (plugin != null && plugin.isDevMode()) {
+                plugin.getLogger().info("[WT-DEBUG] hasHotbarRadio player=" + playerUuid + " channel=" + (channel == null ? "<null>" : channel.id()) + " result=" + res + " cache=" + channels);
+            }
+        } catch (Throwable ignored) {
+        }
+        return res;
     }
 }

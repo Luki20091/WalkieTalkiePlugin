@@ -48,6 +48,10 @@ public final class RadioRegistry {
             itemsAdderIdToChannel.put((base + "_1").toLowerCase(Locale.ROOT), def.channel());
             itemsAdderIdToChannel.put((base + "_2").toLowerCase(Locale.ROOT), def.channel());
         }
+        try {
+            org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] RadioRegistry.reload built itemsAdderId map size=" + itemsAdderIdToChannel.size());
+        } catch (Throwable ignored) {
+        }
     }
 
     private static String stripStageSuffix(String id) {

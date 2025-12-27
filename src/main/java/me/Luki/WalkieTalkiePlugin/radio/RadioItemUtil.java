@@ -61,8 +61,10 @@ public final class RadioItemUtil {
         if (itemsAdder != null && itemsAdder.isAvailable() && registry != null) {
             String id = itemsAdder.getCustomId(itemStack);
             if (id != null && !id.isBlank()) {
+                try { org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] RadioItemUtil.getChannel found ItemsAdder id=" + id); } catch (Throwable ignored) {}
                 RadioChannel byId = registry.getChannelByItemsAdderId(id);
                 if (byId != null) {
+                    try { org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] RadioItemUtil.getChannel mapped id=" + id + " -> " + byId.id()); } catch (Throwable ignored) {}
                     return byId;
                 }
             }
@@ -70,10 +72,12 @@ public final class RadioItemUtil {
 
         ItemMeta meta = itemStack.getItemMeta();
         if (meta == null) {
+            try { org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] RadioItemUtil.getChannel no ItemMeta for stack"); } catch (Throwable ignored) {}
             return null;
         }
         PersistentDataContainer pdc = meta.getPersistentDataContainer();
         String id = pdc.get(channelKey, PersistentDataType.STRING);
+        try { org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] RadioItemUtil.getChannel pdc id=" + id); } catch (Throwable ignored) {}
         return RadioChannel.fromId(id);
     }
 
@@ -156,13 +160,17 @@ public final class RadioItemUtil {
     }
 
     public boolean isItemsAdderAvailable() {
-        return itemsAdder != null && itemsAdder.isAvailable();
+        boolean res = itemsAdder != null && itemsAdder.isAvailable();
+        try { org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] RadioItemUtil.isItemsAdderAvailable=" + res); } catch (Throwable ignored) {}
+        return res;
     }
 
     public String debugGetItemsAdderId(ItemStack itemStack) {
         if (itemsAdder == null || !itemsAdder.isAvailable()) {
             return null;
         }
-        return itemsAdder.getCustomId(itemStack);
+        String id = itemsAdder.getCustomId(itemStack);
+        try { org.bukkit.Bukkit.getLogger().info("[WT-DEBUG] debugGetItemsAdderId -> " + id); } catch (Throwable ignored) {}
+        return id;
     }
 }

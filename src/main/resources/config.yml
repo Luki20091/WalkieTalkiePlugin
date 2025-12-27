@@ -222,4 +222,4 @@ hints:
 # Debugger / diagnostyka
 debug:
   enabled: true
-  logIntervalMs: 3000
+  logIntervalMs: 10000

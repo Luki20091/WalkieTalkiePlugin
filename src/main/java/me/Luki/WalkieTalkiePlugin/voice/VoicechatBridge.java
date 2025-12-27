@@ -303,6 +303,11 @@ public final class VoicechatBridge implements VoicechatPlugin, VoiceBridge {
             return false;
         }
 
+        try {
+            plugin.getLogger().info("[WT-DEBUG] Broadcast init sender=" + senderUuid + " channel=" + (transmitting == null ? "<null>" : transmitting.id()) + " onlineReceivers=" + receivers.size());
+        } catch (Throwable ignored) {
+        }
+
         // Cache sender world token once.
         Object senderWorld = null;
         try {
@@ -319,6 +324,7 @@ public final class VoicechatBridge implements VoicechatPlugin, VoiceBridge {
 
             VoicechatConnection receiverConnection = api.getConnectionOf(receiverUuid);
             if (receiverConnection == null) {
+                try { plugin.getLogger().info("[WT-DEBUG] broadcast:skip:noConnection:" + receiverUuid + ":" + transmitting.id() + " Skipping receiver (no connection)."); } catch (Throwable ignored) {}
                 continue;
             }
 
@@ -329,6 +335,7 @@ public final class VoicechatBridge implements VoicechatPlugin, VoiceBridge {
                 receiverPlayer = null;
             }
             if (receiverPlayer == null) {
+                try { plugin.getLogger().info("[WT-DEBUG] broadcast:skip:noPlayer:" + receiverUuid + ":" + transmitting.id() + " Skipping receiver (no player)."); } catch (Throwable ignored) {}
                 continue;
             }
 
@@ -341,11 +348,13 @@ public final class VoicechatBridge implements VoicechatPlugin, VoiceBridge {
                     receiverWorld = null;
                 }
                 if (senderWorld == null || receiverWorld == null || senderWorld != receiverWorld) {
+                    try { plugin.getLogger().info("[WT-DEBUG] broadcast:skip:worldMismatch:" + receiverUuid + ":" + transmitting.id() + " Skipping receiver (different world)."); } catch (Throwable ignored) {}
                     continue;
                 }
             }
 
             if (!plugin.canListenCached(receiverUuid, transmitting)) {
+                try { plugin.getLogger().info("[WT-DEBUG] broadcast:skip:notAllowed:" + receiverUuid + ":" + transmitting.id() + " Skipping receiver (canListenCached=false) :: " + plugin.debugExplainListenDecision(receiverUuid, transmitting)); } catch (Throwable ignored) {}
                 continue;
             }
 
@@ -354,10 +363,12 @@ public final class VoicechatBridge implements VoicechatPlugin, VoiceBridge {
                 Position senderPos = senderPlayer.getPosition();
                 Position receiverPos = receiverPlayer.getPosition();
                 if (senderPos != null && receiverPos != null && isWithinDistance(senderPos, receiverPos, radioMinDistanceBlocks)) {
+                    try { plugin.getLogger().info("[WT-DEBUG] broadcast:skip:proxCloser:" + receiverUuid + ":" + transmitting.id() + " Skipping receiver (closer than minDistance, keep prox)."); } catch (Throwable ignored) {}
                     continue;
                 }
             }
 
+            try { plugin.getLogger().info("[WT-DEBUG] broadcast:send:" + receiverUuid + ":" + transmitting.id() + " Sending radio packet to receiver=" + receiverUuid + " channel=" + transmitting.id()); } catch (Throwable ignored) {}
             sendRadioPacket(api, senderPlayer, receiverConnection, receiverPlayer, transmitting, micPacket);
             plugin.recordRadioReceive(receiverUuid, transmitting);
             plugin.debugMicRadioSent();

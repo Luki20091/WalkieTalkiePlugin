@@ -47,6 +47,8 @@ public final class RadioListeners implements Listener {
         boolean hasPirateListenPerm = player.hasPermission(RadioChannel.PIRACI_RANDOM.listenPermission());
         boolean wantsEavesdrop = inHand == RadioChannel.PIRACI_RANDOM && hasPirateListenPerm;
 
+        plugin.getLogger().info("[WT-DEBUG] updatePirateEavesdrop player=" + player.getName() + " inHand=" + (inHand == null ? "<none>" : inHand.id()) + " hasPerm=" + hasPirateListenPerm + " wasEavesdropping=" + wasEavesdropping + " wantsEavesdrop=" + wantsEavesdrop);
+
         boolean changed = false;
 
         if (inHand == RadioChannel.PIRACI_RANDOM && !hasPirateListenPerm) {
@@ -81,6 +83,8 @@ public final class RadioListeners implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
 
+        plugin.getLogger().info("[WT-DEBUG] PlayerJoin: " + player.getName() + " uuid=" + player.getUniqueId());
+
         plugin.markPlayerOnline(player.getUniqueId());
 
         // If the player logged out while transmitting, ensure we don't keep the "talking" texture.
@@ -107,6 +111,7 @@ public final class RadioListeners implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
+        plugin.getLogger().info("[WT-DEBUG] PlayerQuit: " + event.getPlayer().getName() + " uuid=" + event.getPlayer().getUniqueId());
         plugin.markPlayerOffline(event.getPlayer().getUniqueId());
         plugin.normalizeTalkingVariantInMainHand(event.getPlayer(), true);
         plugin.releaseBusyLineIfOwned(event.getPlayer().getUniqueId());
@@ -444,6 +449,7 @@ public final class RadioListeners implements Listener {
     public void onItemHeld(PlayerItemHeldEvent event) {
         Player player = event.getPlayer();
         plugin.runNextTick(() -> {
+            plugin.getLogger().info("[WT-DEBUG] ItemHeld event for " + player.getName() + " from=" + event.getPreviousSlot() + " to=" + event.getNewSlot());
             plugin.getRadioState().refreshHotbar(player);
             plugin.refreshTransmitCache(player);
             plugin.refreshPermissionCache(player);
