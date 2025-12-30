@@ -2,7 +2,7 @@
 # Minecraft: 1.21.8
 
 # Developer mode (enables extra debug logging)
-dev: true
+dev: false
 
 # Nadawanie radiem: trzymaj radio w main hand + użyj PTT w Simple Voice Chat.
 
@@ -224,8 +224,8 @@ hints:
 
 # Debugger / diagnostyka
 debug:
-  enabled: true
+  enabled: false
   logIntervalMs: 10000
   # Hotbar / inventory debug: enable extra, per-slot hotbar logs (for reproducing dupes)
-  hotbarDetailedLogging: true
+  hotbarDetailedLogging: false
 

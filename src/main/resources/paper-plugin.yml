@@ -1,5 +1,5 @@
 name: WalkieTalkiePlugin
-version: '1.0-Alpha'
+version: '1.2-Alpha'
 main: me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin
 api-version: '1.21'
 load: STARTUP
