@@ -48,7 +48,6 @@ radios:
   piraci: "radio:radio_piraci"
   streamcraft: "radio:radio_streamcraft"
   piraci_random: "radio:radio_piraci_random"
-  onlyInPlayerInventory: true
 
 # Feedback sounds
 sounds:
@@ -206,9 +205,10 @@ notifications:
     stop:
       enabled: true
       actionBar: "&5Koniec podsłuchu"
-  radiosOnlyInPlayerInventory:
-    enabled: true
-    actionBar: "&cRadia można trzymać tylko w ekwipunku gracza."
+
+radiosOnlyInPlayerInventory:
+  enabled: false
+  actionBar: "&cRadia można trzymać tylko w ekwipunku gracza."
 
 # Hint: pokazuje nadającemu, że musi wcisnąć PTT w Simple Voice Chat
 hints:

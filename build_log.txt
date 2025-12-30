@@ -1,0 +1,25 @@
+
+> Task :compileJava FAILED
+C:\Users\lukas\IdeaProjects\WalkieTalkiePlugin\src\main\java\me\Luki\WalkieTalkiePlugin\listeners\RadioListeners.java:486: error: illegal start of expression
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
+    ^
+C:\Users\lukas\IdeaProjects\WalkieTalkiePlugin\src\main\java\me\Luki\WalkieTalkiePlugin\listeners\RadioListeners.java:486: error: ')' or ',' expected
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
+                                                                           ^
+C:\Users\lukas\IdeaProjects\WalkieTalkiePlugin\src\main\java\me\Luki\WalkieTalkiePlugin\listeners\RadioListeners.java:487: error: illegal start of expression
+    public void onInventoryCreative(org.bukkit.event.inventory.InventoryCreativeEvent event) {
+    ^
+3 errors
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> Compilation failed; see the compiler error output for details.
+
+* Try:
+> Run with --info option to get more log output.
+> Run with --scan to get full insights.
+
+BUILD FAILED in 720ms
+1 actionable task: 1 executed

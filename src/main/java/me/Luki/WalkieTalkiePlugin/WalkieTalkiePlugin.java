@@ -34,89 +34,111 @@ import java.util.Set;
 import static me.Luki.WalkieTalkiePlugin.radio.RadioItemKeys.channelKey;
 
 public final class WalkieTalkiePlugin extends JavaPlugin {
-        /**
-         * Always decrements durability of the radio in player's main hand by 1, regardless of listeners.
-         * Use this after transmit ends to ensure durability is reduced.
-         */
-        public void decrementRadioDurability(Player player) {
-            if (player == null || itemUtil == null) return;
-            ItemStack stack = player.getInventory().getItemInMainHand();
-            if (isDevMode()) {
-                String ia = itemUtil != null ? itemUtil.debugGetItemsAdderId(stack) : "<no-ia>";
-                getLogger().info("[WT-DEBUG] decrementRadioDurability called for " + (player == null ? "<null>" : player.getName()) + " ia=" + ia + " type=" + (stack == null ? "<null>" : stack.getType()));
+    /**
+     * Always decrements durability of the radio in player's main hand by 1,
+     * regardless of listeners.
+     * Use this after transmit ends to ensure durability is reduced.
+     */
+    public void decrementRadioDurability(Player player) {
+        if (player == null || itemUtil == null)
+            return;
+        ItemStack stack = player.getInventory().getItemInMainHand();
+        if (isDevMode()) {
+            String ia = itemUtil != null ? itemUtil.debugGetItemsAdderId(stack) : "<no-ia>";
+            getLogger().info(
+                    "[WT-DEBUG] decrementRadioDurability called for " + (player == null ? "<null>" : player.getName())
+                            + " ia=" + ia + " type=" + (stack == null ? "<null>" : stack.getType()));
+        }
+        if (stack == null || !itemUtil.isRadio(stack)) {
+            if (isDevMode())
+                getLogger().info("[WT-DEBUG] Not a radio or empty main hand.");
+            return;
+        }
+        ItemMeta meta = stack.getItemMeta();
+        if (meta == null) {
+            if (isDevMode())
+                getLogger().info("[WT-DEBUG] ItemMeta is null.");
+            return;
+        }
+        if (!(meta instanceof org.bukkit.inventory.meta.Damageable)) {
+            if (isDevMode())
+                getLogger().info("[WT-DEBUG] ItemMeta is not Damageable.");
+            return;
+        }
+        org.bukkit.inventory.meta.Damageable damageable = (org.bukkit.inventory.meta.Damageable) meta;
+        int current = damageable.getDamage();
+        int max = stack.getType().getMaxDurability();
+        String iaId = "<none>";
+        int iaMax = 0;
+        // If ItemsAdder provides a configured max durability for this custom id, prefer
+        // it.
+        try {
+            if (itemsAdder != null && itemsAdder.isAvailable()) {
+                iaId = itemsAdder.getCustomId(stack);
+                iaMax = itemsAdder.getMaxDurabilityForId(iaId);
+                if (iaMax > 0) {
+                    max = iaMax;
+                }
             }
-            if (stack == null || !itemUtil.isRadio(stack)) {
-                if (isDevMode()) getLogger().info("[WT-DEBUG] Not a radio or empty main hand.");
-                return;
-            }
-            ItemMeta meta = stack.getItemMeta();
-            if (meta == null) {
-                if (isDevMode()) getLogger().info("[WT-DEBUG] ItemMeta is null.");
-                return;
-            }
-            if (!(meta instanceof org.bukkit.inventory.meta.Damageable)) {
-                if (isDevMode()) getLogger().info("[WT-DEBUG] ItemMeta is not Damageable.");
-                return;
-            }
-            org.bukkit.inventory.meta.Damageable damageable = (org.bukkit.inventory.meta.Damageable) meta;
-            int current = damageable.getDamage();
-            int max = stack.getType().getMaxDurability();
-            String iaId = "<none>";
-            int iaMax = 0;
-            // If ItemsAdder provides a configured max durability for this custom id, prefer it.
+        } catch (Throwable t) {
+            if (isDevMode())
+                t.printStackTrace();
+        }
+        if (isDevMode())
+            getLogger().info("[WT-DEBUG] iaId=" + iaId + " iaMax=" + iaMax + " currentDamage=" + current
+                    + " resolvedMax=" + max);
+
+        int newDamage = current + 1;
+        if (current < max) {
+            damageable.setDamage(newDamage);
+            stack.setItemMeta(meta);
+            // Ensure inventory holds the mutated ItemStack instance.
             try {
-                if (itemsAdder != null && itemsAdder.isAvailable()) {
-                    iaId = itemsAdder.getCustomId(stack);
-                    iaMax = itemsAdder.getMaxDurabilityForId(iaId);
-                    if (iaMax > 0) {
-                        max = iaMax;
-                    }
-                }
-            } catch (Throwable t) {
-                if (isDevMode()) t.printStackTrace();
+                player.getInventory().setItemInMainHand(stack);
+            } catch (Throwable ignored) {
             }
-            if (isDevMode()) getLogger().info("[WT-DEBUG] iaId=" + iaId + " iaMax=" + iaMax + " currentDamage=" + current + " resolvedMax=" + max);
+            if (isDevMode())
+                getLogger().info("[WT-DEBUG] Durability decremented (new=" + newDamage + ") for ia=" + iaId);
 
-            int newDamage = current + 1;
-            if (current < max) {
-                damageable.setDamage(newDamage);
-                stack.setItemMeta(meta);
-                // Ensure inventory holds the mutated ItemStack instance.
+            // If we've reached or exceeded the configured max, force removal and play break
+            // sound.
+            if (newDamage >= max) {
                 try {
-                    player.getInventory().setItemInMainHand(stack);
-                } catch (Throwable ignored) {
-                }
-                if (isDevMode()) getLogger().info("[WT-DEBUG] Durability decremented (new=" + newDamage + ") for ia=" + iaId);
-
-                // If we've reached or exceeded the configured max, force removal and play break sound.
-                if (newDamage >= max) {
-                    try {
-                        if (isDevMode()) getLogger().info("[WT-DEBUG] Reached max durability, forcing removal of item in main hand ia=" + iaId);
-                        player.getInventory().setItemInMainHand(new org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR));
-                        try {
-                            player.getWorld().playSound(player.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0f, 1.0f);
-                        } catch (Throwable ignoredSound) {
-                        }
-                    } catch (Throwable t) {
-                        if (isDevMode()) t.printStackTrace();
-                    }
-                }
-            } else {
-                if (isDevMode()) getLogger().info("[WT-DEBUG] Damage at or above max; forcing removal ia=" + iaId);
-                try {
-                    player.getInventory().setItemInMainHand(new org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR));
+                    if (isDevMode())
+                        getLogger().info(
+                                "[WT-DEBUG] Reached max durability, forcing removal of item in main hand ia=" + iaId);
+                    player.getInventory()
+                            .setItemInMainHand(new org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR));
                     try {
                         player.getWorld().playSound(player.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0f, 1.0f);
-                    } catch (Throwable ignored) {
+                    } catch (Throwable ignoredSound) {
                     }
                 } catch (Throwable t) {
-                    if (isDevMode()) t.printStackTrace();
+                    if (isDevMode())
+                        t.printStackTrace();
                 }
             }
+        } else {
+            if (isDevMode())
+                getLogger().info("[WT-DEBUG] Damage at or above max; forcing removal ia=" + iaId);
+            try {
+                player.getInventory().setItemInMainHand(new org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR));
+                try {
+                    player.getWorld().playSound(player.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0f, 1.0f);
+                } catch (Throwable ignored) {
+                }
+            } catch (Throwable t) {
+                if (isDevMode())
+                    t.printStackTrace();
+            }
         }
+    }
+
     /**
-     * Reduces durability of the item in player's main hand by 1, synchronizing durability between radio variants.
-     * If durability reaches 0, the item will be removed automatically by ItemsAdder/Paper.
+     * Reduces durability of the item in player's main hand by 1, synchronizing
+     * durability between radio variants.
+     * If durability reaches 0, the item will be removed automatically by
+     * ItemsAdder/Paper.
      */
     public void reduceRadioDurability(Player player) {
         // Kept for backward compatibility. Forward to the unified implementation.
@@ -125,13 +147,16 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     /**
      * Synchronizes durability between radio item variants (_0/_1/_2).
-     * Should be called when swapping item variant to keep durability visually correct.
+     * Should be called when swapping item variant to keep durability visually
+     * correct.
      */
     public void syncRadioDurability(ItemStack from, ItemStack to) {
-        if (from == null || to == null) return;
+        if (from == null || to == null)
+            return;
         ItemMeta fromMeta = from.getItemMeta();
         ItemMeta toMeta = to.getItemMeta();
-        if (fromMeta instanceof org.bukkit.inventory.meta.Damageable && toMeta instanceof org.bukkit.inventory.meta.Damageable) {
+        if (fromMeta instanceof org.bukkit.inventory.meta.Damageable
+                && toMeta instanceof org.bukkit.inventory.meta.Damageable) {
             int damage = ((org.bukkit.inventory.meta.Damageable) fromMeta).getDamage();
             ((org.bukkit.inventory.meta.Damageable) toMeta).setDamage(damage);
             to.setItemMeta(toMeta);
@@ -180,7 +205,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     private final Map<UUID, RadioChannel> transmitChannelByPlayer = new ConcurrentHashMap<>();
     private final Map<UUID, RadioChannel> preferredListenChannelByPlayer = new ConcurrentHashMap<>();
 
-    // Flag: whether a player currently has a Backpack-like GUI open that should block
+    // Flag: whether a player currently has a Backpack-like GUI open that should
+    // block
     // moving/picking radio items. External plugins (e.g. BackpackPlus) should call
     // `markPlayerBackpackGuiOpen(player, true)` when opening such a GUI and
     // `markPlayerBackpackGuiOpen(player, false)` when closing it.
@@ -264,7 +290,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     // Off-thread safe list of online players. Updated on main thread in listeners.
     private final Set<UUID> onlinePlayerUuids = ConcurrentHashMap.newKeySet();
 
-    // Debug/repair: if a receiver is denied due to stale caches, refresh their caches at most once per interval.
+    // Debug/repair: if a receiver is denied due to stale caches, refresh their
+    // caches at most once per interval.
     private final Map<UUID, Long> lastDeniedCacheRefreshAtMs = new ConcurrentHashMap<>();
 
     private final LegacyComponentSerializer legacy = LegacyComponentSerializer.legacySection();
@@ -301,7 +328,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(new RadioListeners(this, itemUtil), this);
             getServer().getPluginManager().registerEvents(new VoicechatAutoHookListener(this), this);
 
-            // Populate caches for already-online players (e.g. plugin reload while players are online)
+            // Populate caches for already-online players (e.g. plugin reload while players
+            // are online)
             getServer().getOnlinePlayers().forEach(p -> {
                 onlinePlayerUuids.add(p.getUniqueId());
                 radioState.refreshHotbar(p);
@@ -499,8 +527,10 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     }
 
     /**
-     * Marks whether the player is currently holding-to-talk (PPM/USE_ITEM) with a transmit-capable radio.
-     * This is used by filterLoop mode HOLD to align start/stop exactly to the user's action.
+     * Marks whether the player is currently holding-to-talk (PPM/USE_ITEM) with a
+     * transmit-capable radio.
+     * This is used by filterLoop mode HOLD to align start/stop exactly to the
+     * user's action.
      */
     public void setHoldToTalkActive(UUID playerUuid, boolean active) {
         if (playerUuid == null) {
@@ -519,7 +549,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     /**
      * If filterLoop is enabled and in HOLD mode, play one pulse immediately.
-     * This removes the perceived delay caused by the periodic scheduler tick alignment.
+     * This removes the perceived delay caused by the periodic scheduler tick
+     * alignment.
      */
     public void maybePlayFilterLoopPulseNow(Player player) {
         if (player == null) {
@@ -541,7 +572,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     /**
      * Plays one filterLoop pulse immediately for PTT mode.
-     * Used to avoid waiting up to everyTicks before the first pulse after pressing SVC PTT.
+     * Used to avoid waiting up to everyTicks before the first pulse after pressing
+     * SVC PTT.
      */
     private void maybePlayFilterLoopPulseNowOnMicStart(Player player) {
         if (player == null) {
@@ -600,7 +632,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                         lastPttRequiredHintAtMs.put(uuid, now);
                         playConfiguredNotification(player, "hints.pttRequired");
                     } catch (Throwable t) {
-                        debugLog("loop:pttHint", "pttRequired hint loop error: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+                        debugLog("loop:pttHint",
+                                "pttRequired hint loop error: " + t.getClass().getSimpleName() + ": " + t.getMessage());
                     }
                 }
             }, everyTicks, everyTicks);
@@ -636,16 +669,17 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                                     continue;
                                 }
                             } else {
-                            long lastMic = lastMicPacketAtMs.getOrDefault(uuid, 0L);
-                            if (lastMic <= 0L || now - lastMic > activeForMs) {
-                                continue;
-                            }
+                                long lastMic = lastMicPacketAtMs.getOrDefault(uuid, 0L);
+                                if (lastMic <= 0L || now - lastMic > activeForMs) {
+                                    continue;
+                                }
                             }
                         }
 
                         playConfiguredSoundPulse(player, filterBasePath);
                     } catch (Throwable t) {
-                        debugLog("loop:filterLoop", "filterLoop error: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+                        debugLog("loop:filterLoop",
+                                "filterLoop error: " + t.getClass().getSimpleName() + ": " + t.getMessage());
                     }
                 }
             }, 0L, everyTicks);
@@ -678,17 +712,24 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                     if (vObj instanceof Number n) {
                         volume = n.doubleValue();
                     } else if (vObj != null) {
-                        try { volume = Double.parseDouble(String.valueOf(vObj)); } catch (Exception ignored) {}
+                        try {
+                            volume = Double.parseDouble(String.valueOf(vObj));
+                        } catch (Exception ignored) {
+                        }
                     }
                     if (pObj instanceof Number n) {
                         pitch = n.doubleValue();
                     } else if (pObj != null) {
-                        try { pitch = Double.parseDouble(String.valueOf(pObj)); } catch (Exception ignored) {}
+                        try {
+                            pitch = Double.parseDouble(String.valueOf(pObj));
+                        } catch (Exception ignored) {
+                        }
                     }
 
                     Sound sound = resolveSound(soundName);
                     if (sound == null) {
-                        debugLog("sound:" + basePath, "Invalid sound in config: " + basePath + ".sounds[].sound='" + soundName + "'");
+                        debugLog("sound:" + basePath,
+                                "Invalid sound in config: " + basePath + ".sounds[].sound='" + soundName + "'");
                         // Best-effort: stop any long filter sound for online players.
                         getServer().getOnlinePlayers().forEach(this::stopFilterLongSound);
                         continue;
@@ -720,34 +761,54 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         // NOTE: allow listening to multiple channels simultaneously if the player
         // has the corresponding radio in their hotbar. `preferredListenChannelByPlayer`
-        // is only used for visuals/selection and must not prevent actual audio delivery.
+        // is only used for visuals/selection and must not prevent actual audio
+        // delivery.
 
         PermissionSnapshot snapshot = permissionSnapshots.get(receiverUuid);
         if (snapshot == null) {
-            try { debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id() + " result=false (no snapshot)"); } catch (Throwable ignored) {}
+            try {
+                debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id()
+                        + " result=false (no snapshot)");
+            } catch (Throwable ignored) {
+            }
             return false;
         }
 
         // Pirate eavesdrop: receiver listens while holding pirate radio.
-        // The pirate radio now acts as a wildcard: it can catch any transmitting channel.
+        // The pirate radio now acts as a wildcard: it can catch any transmitting
+        // channel.
         RadioChannel eavesdropTarget = radioState != null ? radioState.getEavesdroppingChannel(receiverUuid) : null;
         if (eavesdropTarget != null) {
             boolean isWildcard = eavesdropTarget == RadioChannel.PIRACI_RANDOM;
             boolean match = isWildcard || eavesdropTarget == transmitting;
             if (match) {
                 boolean res = snapshot.hasPirateRandomUse && snapshot.hasListenPermission(transmitting);
-                try { debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id() + " result=" + res + " (eavesdrop match)"); } catch (Throwable ignored) {}
+                try {
+                    debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id()
+                            + " result=" + res + " (eavesdrop match)");
+                } catch (Throwable ignored) {
+                }
                 return res;
             }
         }
 
         if (!snapshot.hasListenPermission(transmitting)) {
-            try { debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id() + " result=false (no listen perm)"); } catch (Throwable ignored) {}
+            try {
+                debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id()
+                        + " result=false (no listen perm)");
+            } catch (Throwable ignored) {
+            }
             return false;
         }
 
         boolean hasHotbar = radioState != null && radioState.hasHotbarRadio(receiverUuid, transmitting);
-        try { debugLog("canListen", "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id() + " result=" + hasHotbar + " (hotbar=" + hasHotbar + ") :: " + debugExplainListenDecision(receiverUuid, transmitting)); } catch (Throwable ignored) {}
+        try {
+            debugLog("canListen",
+                    "canListenCached receiver=" + receiverUuid + " tx=" + transmitting.id() + " result=" + hasHotbar
+                            + " (hotbar=" + hasHotbar + ") :: "
+                            + debugExplainListenDecision(receiverUuid, transmitting));
+        } catch (Throwable ignored) {
+        }
         return hasHotbar;
     }
 
@@ -758,6 +819,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         UUID uuid = player.getUniqueId();
         int heldSlot = player.getInventory().getHeldItemSlot();
+
         RadioChannel selected = null;
         RadioChannel firstDeniedListen = null;
 
@@ -829,6 +891,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             this.listenMask = listenMask;
             this.hasPirateRandomUse = hasPirateRandomUse;
         }
+
         public boolean hasListenPermission(RadioChannel channel) {
             if (channel == null) {
                 return false;
@@ -851,11 +914,13 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         }
 
         // Remove perceived "first PTT lag": don't wait for the periodic UI task tick.
-        // This method may be called off-thread and also multiple times per packet (SVC is per receiver),
+        // This method may be called off-thread and also multiple times per packet (SVC
+        // is per receiver),
         // so we only trigger on the transition from inactive -> active.
         boolean wasActive = Boolean.TRUE.equals(transmitUiActive.put(senderUuid, true));
         if (isDevMode()) {
-            getLogger().info("[WT-DEBUG] recordMicPacket sender=" + senderUuid + " channel=" + (channel == null ? "<none>" : channel.id()) + " wasActive=" + wasActive);
+            getLogger().info("[WT-DEBUG] recordMicPacket sender=" + senderUuid + " channel="
+                    + (channel == null ? "<none>" : channel.id()) + " wasActive=" + wasActive);
         }
         if (!wasActive) {
             UUID uuid = senderUuid;
@@ -865,7 +930,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                 if (player == null) {
                     return;
                 }
-                // filterLong is LISTEN/eavesdrop-only; make sure it is not audible during transmit.
+                // filterLong is LISTEN/eavesdrop-only; make sure it is not audible during
+                // transmit.
                 stopFilterLongSound(player);
                 playTransmitStartSound(player);
                 playConfiguredNotification(player, "notifications.transmit.start");
@@ -920,7 +986,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             if (player == null) {
                 return;
             }
-            // applyHotbarVisuals reads lastRadioReceive* maps, so it will choose LISTEN immediately.
+            // applyHotbarVisuals reads lastRadioReceive* maps, so it will choose LISTEN
+            // immediately.
             RadioChannel txChannel = transmitChannelByPlayer.get(uuid);
             boolean txActive = Boolean.TRUE.equals(transmitUiActive.get(uuid));
             applyHotbarVisuals(player, txChannel, txActive, System.currentTimeMillis());
@@ -941,7 +1008,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         long now = System.currentTimeMillis();
         Object token = (radioScope == RadioScope.GLOBAL) ? GLOBAL_WORLD_TOKEN : worldToken;
         BusyLineKey key = new BusyLineKey(token, channel);
-        final boolean[] acquired = new boolean[]{false};
+        final boolean[] acquired = new boolean[] { false };
         busyLineByChannel.compute(key, (k, cur) -> {
             if (cur == null || senderUuid.equals(cur.owner) || (now - cur.lastPacketAtMs) > busyLineTimeoutMs) {
                 acquired[0] = true;
@@ -1000,7 +1067,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         this.busyLineTimeoutMs = Math.max(100L, getConfig().getLong("radio.busyLine.timeoutMs", 350L));
         this.busyLineHintCooldownMs = Math.max(100L, getConfig().getLong("radio.busyLine.hintCooldownMs", 750L));
 
-        this.permissionHintCooldownMs = Math.max(250L, getConfig().getLong("notifications.permissions.cooldownMs", 1500L));
+        this.permissionHintCooldownMs = Math.max(250L,
+                getConfig().getLong("notifications.permissions.cooldownMs", 1500L));
 
         this.listenVisualsEnabled = getConfig().getBoolean("visuals.listen.enabled", true);
         this.listenVisualActiveForMs = Math.max(100L, getConfig().getLong("visuals.listen.activeForMs", 300L));
@@ -1056,24 +1124,30 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             if (player != null) {
                 if (wasActive) {
                     // filterLong should never be audible during transmit.
-                    // After transmit ends, we may resume it if the user is still LISTENing or eavesdropping.
+                    // After transmit ends, we may resume it if the user is still LISTENing or
+                    // eavesdropping.
                     stopFilterLongSound(player);
                     playTransmitStopSound(player);
                     playConfiguredNotification(player, "notifications.transmit.stop");
 
                     boolean listenActive = Boolean.TRUE.equals(listenUiActive.get(playerUuid));
-                    boolean eavesdropping = radioState != null && radioState.getEavesdroppingChannel(playerUuid) != null;
+                    boolean eavesdropping = radioState != null
+                            && radioState.getEavesdroppingChannel(playerUuid) != null;
                     if (listenActive || eavesdropping) {
                         playFilterLongSound(player);
                     }
-                    // Best-effort: if transmit visuals timed out (SVC stop), ensure transmit state is cleared
+                    // Best-effort: if transmit visuals timed out (SVC stop), ensure transmit state
+                    // is cleared
                     // and always decrement durability once for the transmit action.
                     try {
-                        // Use the cached hotbar/main-hand transmit channel (Voicechat path sets/refreshes this),
+                        // Use the cached hotbar/main-hand transmit channel (Voicechat path
+                        // sets/refreshes this),
                         // radioState.transmitting is only set by hold-to-talk listeners.
                         RadioChannel prev = transmitChannelByPlayer.get(playerUuid);
                         if (isDevMode()) {
-                            getLogger().info("[WT-DEBUG] transmitClearTask cachedTxChannel=" + (prev == null ? "<none>" : prev.id()) + " transmitUiActive=" + Boolean.TRUE.equals(transmitUiActive.get(playerUuid)));
+                            getLogger().info("[WT-DEBUG] transmitClearTask cachedTxChannel="
+                                    + (prev == null ? "<none>" : prev.id()) + " transmitUiActive="
+                                    + Boolean.TRUE.equals(transmitUiActive.get(playerUuid)));
                         }
                         if (prev != null) {
                             // clear cached transmit channel and decrement durability once for this transmit
@@ -1081,7 +1155,9 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                             if (isDevMode() && player != null) {
                                 ItemStack s = player.getInventory().getItemInMainHand();
                                 String ia = itemUtil != null ? itemUtil.debugGetItemsAdderId(s) : "<no-ia>";
-                                getLogger().info("[WT-DEBUG] transmitClearTask about to decrement radio for " + player.getName() + " ia=" + ia + " type=" + (s == null ? "<null>" : s.getType()));
+                                getLogger().info(
+                                        "[WT-DEBUG] transmitClearTask about to decrement radio for " + player.getName()
+                                                + " ia=" + ia + " type=" + (s == null ? "<null>" : s.getType()));
                             }
                             decrementRadioDurability(player);
                         }
@@ -1132,7 +1208,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                 if (wasActive) {
                     boolean txActive = Boolean.TRUE.equals(transmitUiActive.get(playerUuid));
                     // Don't stop the filter/start-stop sounds if transmit is still active.
-                    boolean eavesdropping = radioState != null && radioState.getEavesdroppingChannel(playerUuid) != null;
+                    boolean eavesdropping = radioState != null
+                            && radioState.getEavesdroppingChannel(playerUuid) != null;
                     if (!txActive && !eavesdropping) {
                         stopFilterLongSound(player);
                         playFeedbackSound(player, "sounds.stop");
@@ -1167,13 +1244,13 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     public String debugGetMicCountersLine() {
         return "micEvents=" + dbgMicEvents.get()
-            + " noSender=" + dbgMicNoSender.get()
-            + " noReceiver=" + dbgMicNoReceiver.get()
-            + " noTxChannel=" + dbgMicNoTransmitChannel.get()
-            + " crossWorldCancel=" + dbgMicCrossWorldCancelled.get()
-            + " notAllowedCancel=" + dbgMicNotAllowedCancelled.get()
-            + " withinMinDistanceProx=" + dbgMicWithinMinDistanceProx.get()
-            + " radioSent=" + dbgMicRadioSent.get();
+                + " noSender=" + dbgMicNoSender.get()
+                + " noReceiver=" + dbgMicNoReceiver.get()
+                + " noTxChannel=" + dbgMicNoTransmitChannel.get()
+                + " crossWorldCancel=" + dbgMicCrossWorldCancelled.get()
+                + " notAllowedCancel=" + dbgMicNotAllowedCancelled.get()
+                + " withinMinDistanceProx=" + dbgMicWithinMinDistanceProx.get()
+                + " radioSent=" + dbgMicRadioSent.get();
     }
 
     public String debugExplainListenDecision(UUID receiverUuid, RadioChannel transmitting) {
@@ -1195,13 +1272,13 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         boolean pirateRandomAllowed = snapshot != null && snapshot.hasPirateRandomUse;
 
         return "preferred=" + (preferred == null ? "<none>" : preferred.id())
-            + " preferredBlocks=" + preferredBlocks
-            + " snapshot=" + hasSnapshot
-            + " listenPerm=" + hasListenPerm
-            + " hotbarRadio=" + hasHotbarRadio
-            + " eavesdropTarget=" + (eavesdropTarget == null ? "<none>" : eavesdropTarget.id())
-            + " eavesdropMatch=" + isEavesdropMatch
-            + " pirateRandomAllowed=" + pirateRandomAllowed;
+                + " preferredBlocks=" + preferredBlocks
+                + " snapshot=" + hasSnapshot
+                + " listenPerm=" + hasListenPerm
+                + " hotbarRadio=" + hasHotbarRadio
+                + " eavesdropTarget=" + (eavesdropTarget == null ? "<none>" : eavesdropTarget.id())
+                + " eavesdropMatch=" + isEavesdropMatch
+                + " pirateRandomAllowed=" + pirateRandomAllowed;
     }
 
     // Called from VoicechatBridge (may be off-thread)
@@ -1241,14 +1318,14 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             return;
         }
         debugLog(
-            "mic:notAllowed:" + receiverUuid + ":" + transmitting.id(),
-            "Denied radio delivery sender=" + senderUuid
-                + " receiver=" + receiverUuid
-                + " tx=" + transmitting.id()
-                + " :: " + debugExplainListenDecision(receiverUuid, transmitting)
-        );
+                "mic:notAllowed:" + receiverUuid + ":" + transmitting.id(),
+                "Denied radio delivery sender=" + senderUuid
+                        + " receiver=" + receiverUuid
+                        + " tx=" + transmitting.id()
+                        + " :: " + debugExplainListenDecision(receiverUuid, transmitting));
 
-        // Best-effort self-heal: receiver caches might be stale if an inventory event was missed.
+        // Best-effort self-heal: receiver caches might be stale if an inventory event
+        // was missed.
         // Refresh hotbar/permissions/selection on next tick, rate-limited.
         long now = System.currentTimeMillis();
         Long last = lastDeniedCacheRefreshAtMs.get(receiverUuid);
@@ -1282,8 +1359,6 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         dbgMicRadioSent.incrementAndGet();
     }
 
-
-
     private void applyHotbarVisuals(Player player, RadioChannel txChannel, boolean txActive, long nowMs) {
         if (player == null || itemUtil == null) {
             return;
@@ -1304,33 +1379,36 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         // Pirate eavesdrop visuals are special:
         // - PIRACI_RANDOM in main hand should show _1 while eavesdropping (idle)
-        // - it should show _2 only while it "caught" a line (i.e. we actually receive audio)
+        // - it should show _2 only while it "caught" a line (i.e. we actually receive
+        // audio)
         boolean eavesdropping = radioState != null && radioState.getEavesdroppingChannel(uuid) != null;
         RadioChannel heldChannel = itemUtil.getChannel(player.getInventory().getItemInMainHand());
         boolean pirateInMainHand = heldChannel == RadioChannel.PIRACI_RANDOM;
 
         int listenSlot = -1;
         if (listenActive && listenChannel != null) {
-            // If we're pirate-eavesdropping and holding the pirate radio, the "caught line" visual belongs
-            // on the pirate radio, not on the real channel radio (which may not even exist in hotbar).
+            // If we're pirate-eavesdropping and holding the pirate radio, the "caught line"
+            // visual belongs
+            // on the pirate radio, not on the real channel radio (which may not even exist
+            // in hotbar).
             if (eavesdropping && pirateInMainHand) {
                 listenSlot = heldSlot;
             } else {
-            for (int slot = 0; slot < 9; slot++) {
-                ItemStack stack = player.getInventory().getItem(slot);
-                RadioChannel itemChannel = itemUtil.getChannel(stack);
-                if (itemChannel == null || itemChannel != listenChannel) {
-                    continue;
-                }
+                for (int slot = 0; slot < 9; slot++) {
+                    ItemStack stack = player.getInventory().getItem(slot);
+                    RadioChannel itemChannel = itemUtil.getChannel(stack);
+                    if (itemChannel == null || itemChannel != listenChannel) {
+                        continue;
+                    }
 
-                // Don't steal visuals from an active transmit item.
-                if (txActive && txChannel != null && slot == heldSlot && itemChannel == txChannel) {
-                    continue;
-                }
+                    // Don't steal visuals from an active transmit item.
+                    if (txActive && txChannel != null && slot == heldSlot && itemChannel == txChannel) {
+                        continue;
+                    }
 
-                listenSlot = slot;
-                break;
-            }
+                    listenSlot = slot;
+                    break;
+                }
             }
         }
 
@@ -1338,9 +1416,13 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         if (hotbarDetailedLoggingEnabled()) {
             try {
                 var top = player.getOpenInventory();
-                var topType = top == null || top.getTopInventory() == null ? "<null>" : String.valueOf(top.getTopInventory().getType());
-                getLogger().info("[WT-DEBUG] applyHotbarVisuals for " + player.getName() + " tx=" + (txChannel == null ? "<none>" : txChannel.id()) + " txActive=" + txActive + " heldSlot=" + heldSlot + " listenSlot=" + listenSlot + " top=" + topType + " eavesdrop=" + eavesdropping);
-            } catch (Throwable ignored) {}
+                var topType = top == null || top.getTopInventory() == null ? "<null>"
+                        : String.valueOf(top.getTopInventory().getType());
+                getLogger().info("[WT-DEBUG] applyHotbarVisuals for " + player.getName() + " tx="
+                        + (txChannel == null ? "<none>" : txChannel.id()) + " txActive=" + txActive + " heldSlot="
+                        + heldSlot + " listenSlot=" + listenSlot + " top=" + topType + " eavesdrop=" + eavesdropping);
+            } catch (Throwable ignored) {
+            }
         }
 
         for (int slot = 0; slot < 9; slot++) {
@@ -1355,7 +1437,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                 desired = RadioVisualStage.TRANSMIT;
             } else if (listenSlot >= 0 && slot == listenSlot) {
                 desired = RadioVisualStage.LISTEN;
-            } else if (eavesdropping && pirateInMainHand && slot == heldSlot && itemChannel == RadioChannel.PIRACI_RANDOM) {
+            } else if (eavesdropping && pirateInMainHand && slot == heldSlot
+                    && itemChannel == RadioChannel.PIRACI_RANDOM) {
                 // Visual-only: use stage _1 as "eavesdrop idle" for PIRACI_RANDOM.
                 desired = RadioVisualStage.TRANSMIT;
             } else {
@@ -1369,24 +1452,55 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                         String curId = "<none>";
                         String newId = "<none>";
                         if (itemsAdder != null && itemsAdder.isAvailable()) {
-                            curId = stack == null ? "<null>" : String.valueOf(itemsAdder.getCustomId(stack)) + "@" + (stack == null ? 0 : stack.getAmount());
-                            newId = String.valueOf(itemsAdder.getCustomId(updated)) + "@" + (updated == null ? 0 : updated.getAmount());
+                            curId = stack == null ? "<null>"
+                                    : String.valueOf(itemsAdder.getCustomId(stack)) + "@"
+                                            + (stack == null ? 0 : stack.getAmount());
+                            newId = String.valueOf(itemsAdder.getCustomId(updated)) + "@"
+                                    + (updated == null ? 0 : updated.getAmount());
                         } else {
-                            curId = stack == null ? "<null>" : String.valueOf(stack.getType()) + "@" + stack.getAmount();
-                            newId = updated == null ? "<null>" : String.valueOf(updated.getType()) + "@" + updated.getAmount();
+                            curId = stack == null ? "<null>"
+                                    : String.valueOf(stack.getType()) + "@" + stack.getAmount();
+                            newId = updated == null ? "<null>"
+                                    : String.valueOf(updated.getType()) + "@" + updated.getAmount();
                         }
-                        getLogger().info("[WT-DEBUG] Hotbar slot=" + slot + " cur=" + curId + " -> new=" + newId + " desiredStage=" + desired.name());
-                    } catch (Throwable ignored) {}
+                        getLogger().info("[WT-DEBUG] Hotbar slot=" + slot + " cur=" + curId + " -> new=" + newId
+                                + " desiredStage=" + desired.name());
+                    } catch (Throwable ignored) {
+                    }
                 }
-                // Even if the instance is the same (meta mutation), set it back to ensure
-                // Bukkit/clients refresh the slot reliably.
-                player.getInventory().setItem(slot, updated);
-                anyChanged = true;
+                // Only perform server->client hotbar writes when it's safe (player not
+                // interacting with a non-player top-inventory). Writing hotbar while a
+                // custom GUI is open can produce client-side phantom cursor/slot states.
+                try {
+                    var openView = player.getOpenInventory();
+                    var curTop = openView == null ? null : openView.getTopInventory();
+                    boolean safeNow = (curTop == null)
+                            || (curTop.getType() == org.bukkit.event.inventory.InventoryType.PLAYER)
+                            || (curTop.getType() == org.bukkit.event.inventory.InventoryType.CRAFTING);
+                    if (safeNow) {
+                        // Even if the instance is the same (meta mutation), set it back to ensure
+                        // Bukkit/clients refresh the slot reliably.
+                        player.getInventory().setItem(slot, updated);
+                        anyChanged = true;
+                    } else {
+                        if (hotbarDetailedLoggingEnabled()) {
+                            try {
+                                String topStr = curTop == null ? "<null>" : String.valueOf(curTop.getType());
+                                getLogger().info("[WT-DEBUG] Skipping hotbar write for " + player.getName() + " slot="
+                                        + slot + " top=" + topStr);
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {
+                    // best-effort: don't let hotbar-sync attempts crash visuals loop
+                }
             }
         }
 
         // Some clients don't reliably refresh slot icons when only meta changes.
-        // This is intentionally only done on transitions (when we actually changed something).
+        // This is intentionally only done on transitions (when we actually changed
+        // something).
         if (anyChanged) {
             try {
                 player.updateInventory();
@@ -1446,7 +1560,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         }
 
         // Version 2: swap ItemsAdder item id instead of changing CMD.
-        // This avoids colliding with other IA items (e.g. internal icons/arrows) that share CMD space.
+        // This avoids colliding with other IA items (e.g. internal icons/arrows) that
+        // share CMD space.
         if (itemsAdder != null && itemsAdder.isAvailable()) {
             String targetId = getStageItemsAdderId(channel, stage);
             if (targetId != null && !targetId.isBlank()) {
@@ -1461,8 +1576,10 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                     return swapped;
                 }
 
-                // Compatibility: many packs only define staged items (<base>_0/_1/_2) and do NOT provide the base item.
-                // If config uses <base> without suffix, OFF would try to swap to <base> which may not exist -> stuck _1.
+                // Compatibility: many packs only define staged items (<base>_0/_1/_2) and do
+                // NOT provide the base item.
+                // If config uses <base> without suffix, OFF would try to swap to <base> which
+                // may not exist -> stuck _1.
                 if (stage == RadioVisualStage.OFF && !targetId.endsWith("_0")) {
                     String altOff = targetId + "_0";
                     ItemStack swappedAlt = itemsAdder.createItemStack(altOff, stack.getAmount());
@@ -1482,7 +1599,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             }
         }
 
-        // Fallback for non-ItemsAdder radios (or if IA stage item is missing): minimal three-stage CMD.
+        // Fallback for non-ItemsAdder radios (or if IA stage item is missing): minimal
+        // three-stage CMD.
         int desired = 1 + stage.offset;
         boolean changed = itemUtil.setCustomModelData(stack, desired);
         return changed ? stack : null;
@@ -1497,7 +1615,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             return false;
         }
 
-        // PIRACI_RANDOM is listen-only; never treat its staged visuals as an "active transmit" radio.
+        // PIRACI_RANDOM is listen-only; never treat its staged visuals as an "active
+        // transmit" radio.
         if (channel == RadioChannel.PIRACI_RANDOM) {
             return false;
         }
@@ -1544,7 +1663,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     /**
      * Hard-stop any transmit visuals for this player.
-     * Used when we have an explicit "stop transmitting" signal (e.g. hold-to-talk release),
+     * Used when we have an explicit "stop transmitting" signal (e.g. hold-to-talk
+     * release),
      * to avoid stuck _1 ItemsAdder variants if silence timeouts aren't scheduled.
      */
     public void forceStopTransmitVisuals(Player player) {
@@ -1576,7 +1696,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     /**
      * Hard-stop any LISTEN visuals and related looping audio.
-     * Used when we have an explicit signal that the player can't/doesn't want to listen anymore
+     * Used when we have an explicit signal that the player can't/doesn't want to
+     * listen anymore
      * (e.g. dropping the radio with Q).
      */
     public void forceStopListenVisuals(Player player) {
@@ -1599,7 +1720,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         lastRadioReceiveChannel.remove(uuid);
         listenUiActive.put(uuid, false);
 
-        // Stop static loop; if some other mode needs it, it will be restarted by that mode.
+        // Stop static loop; if some other mode needs it, it will be restarted by that
+        // mode.
         stopFilterLongSound(player);
 
         RadioChannel txChannel = transmitChannelByPlayer.get(uuid);
@@ -1609,7 +1731,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     /**
      * Emergency stop for all radio-related active states.
-     * This is intentionally aggressive: it clears transmit/listen/eavesdrop flags and stops looping sounds.
+     * This is intentionally aggressive: it clears transmit/listen/eavesdrop flags
+     * and stops looping sounds.
      */
     public void forceStopAllRadioModes(Player player) {
         if (player == null) {
@@ -1638,8 +1761,10 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     }
 
     /**
-     * Best-effort normalization: if the player is holding a talking variant (<base>_1) in main hand,
-     * swap it back to the base item. This prevents "stuck" textures on logout/reload.
+     * Best-effort normalization: if the player is holding a talking variant
+     * (<base>_1) in main hand,
+     * swap it back to the base item. This prevents "stuck" textures on
+     * logout/reload.
      */
     public void normalizeTalkingVariantInMainHand(Player player, boolean force) {
         if (player == null) {
@@ -1665,7 +1790,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     }
 
     /**
-     * If the given stack is a talking variant (<base>_1) of one of our radios, returns a new base ItemStack.
+     * If the given stack is a talking variant (<base>_1) of one of our radios,
+     * returns a new base ItemStack.
      * Otherwise returns null.
      */
     public ItemStack normalizeTalkingVariantToBase(ItemStack stack) {
@@ -1706,11 +1832,12 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     /**
      * Config: whether radios may only be stored in a player's own inventory.
-     * If true, attempts to place radios into non-player inventories will be blocked.
+     * If true, attempts to place radios into non-player inventories will be
+     * blocked.
      */
     public boolean radiosOnlyInPlayerInventory() {
         try {
-            return getConfig().getBoolean("radios.onlyInPlayerInventory", true);
+            return getConfig().getBoolean("radiosOnlyInPlayerInventory.enabled", true);
         } catch (Throwable ignored) {
             return true;
         }
@@ -1721,8 +1848,10 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
      * due to the radios-only-in-player-inventory rule.
      */
     public void notifyRadiosOnlyInPlayerInventory(Player player) {
-        if (player == null) return;
-        String raw = getConfig().getString("notifications.radiosOnlyInPlayerInventory.actionBar", "&cRadios may only be stored in your inventory.");
+        if (player == null)
+            return;
+        String raw = getConfig().getString("radiosOnlyInPlayerInventory.actionBar",
+                "&cRadios may only be stored in your inventory.");
         try {
             player.sendActionBar(legacy.deserialize(translateLegacyColors(raw)));
         } catch (Throwable ignored) {
@@ -1731,13 +1860,16 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     }
 
     /**
-     * Best-effort safety: ensure that radios stored outside the main hand are never left in the ON stage.
+     * Best-effort safety: ensure that radios stored outside the main hand are never
+     * left in the ON stage.
      * This prevents "stealing" an active radio from inventories/chests.
      */
     public void normalizeRadiosForStorage(Player player) {
         if (player == null || itemUtil == null) {
             return;
         }
+
+        boolean changed = false;
 
         // Hotbar (0-8) may show OFF/TRANSMIT/LISTEN visuals.
         // Only normalize storage slots.
@@ -1746,6 +1878,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             ItemStack normalized = normalizeTalkingVariantToBase(item);
             if (normalized != null) {
                 player.getInventory().setItem(slot, normalized);
+                changed = true;
             }
         }
 
@@ -1754,6 +1887,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         ItemStack offhandNorm = normalizeTalkingVariantToBase(offhand);
         if (offhandNorm != null) {
             player.getInventory().setItemInOffHand(offhandNorm);
+            changed = true;
         }
 
         try {
@@ -1766,12 +1900,20 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                         ItemStack normalized = normalizeTalkingVariantToBase(contents[i]);
                         if (normalized != null) {
                             top.setItem(i, normalized);
+                            changed = true;
                         }
                     }
                 }
             }
         } catch (Throwable ignored) {
             // best-effort
+        }
+
+        if (changed) {
+            try {
+                player.updateInventory();
+            } catch (Throwable ignored) {
+            }
         }
     }
 
@@ -1808,18 +1950,23 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     /**
      * Mark that the given player has opened/closed a Backpack-like GUI.
-     * Call with `open=true` when the custom GUI is shown and `false` when it closes.
-     * When set, listeners will block moving/picking radio items to avoid duplication.
+     * Call with `open=true` when the custom GUI is shown and `false` when it
+     * closes.
+     * When set, listeners will block moving/picking radio items to avoid
+     * duplication.
      */
     public void markPlayerBackpackGuiOpen(Player player, boolean open) {
-        if (player == null) return;
+        if (player == null)
+            return;
         UUID uuid = player.getUniqueId();
         if (open) {
             backpackGuiOpen.put(uuid, true);
-            if (isDevMode()) getLogger().info("[WT-DEBUG] Marked player " + player.getName() + " as in Backpack GUI");
+            if (isDevMode())
+                getLogger().info("[WT-DEBUG] Marked player " + player.getName() + " as in Backpack GUI");
         } else {
             backpackGuiOpen.remove(uuid);
-            if (isDevMode()) getLogger().info("[WT-DEBUG] Unmarked player " + player.getName() + " from Backpack GUI");
+            if (isDevMode())
+                getLogger().info("[WT-DEBUG] Unmarked player " + player.getName() + " from Backpack GUI");
         }
     }
 
@@ -1827,7 +1974,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         return uuid != null && Boolean.TRUE.equals(backpackGuiOpen.get(uuid));
     }
 
-    // syncDamageToAllVariants removed: do not copy damage across inventory variants.
+    // syncDamageToAllVariants removed: do not copy damage across inventory
+    // variants.
 
     public RadioChannel getTransmitChannel(Player player) {
         return getTransmitChannelFast(player);
@@ -1864,9 +2012,9 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             if (debugEnabled && inHand != null && !inHand.getType().isAir()) {
                 String iaId = itemUtil.debugGetItemsAdderId(inHand);
                 debugLog("noTx:" + uuid,
-                    "No transmit channel from main-hand item type=" + inHand.getType()
-                        + " iaAvailable=" + itemUtil.isItemsAdderAvailable()
-                        + " iaId=" + (iaId == null ? "null" : iaId));
+                        "No transmit channel from main-hand item type=" + inHand.getType()
+                                + " iaAvailable=" + itemUtil.isItemsAdderAvailable()
+                                + " iaId=" + (iaId == null ? "null" : iaId));
             }
             transmitChannelByPlayer.remove(uuid);
             return;
@@ -1885,7 +2033,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                 maybeNotifyNoAccess(player, channel);
             }
             if (debugEnabled) {
-                debugLog("noTxPerm:" + uuid, "Missing use permission for channel=" + channel.id() + " perm=" + channel.usePermission());
+                debugLog("noTxPerm:" + uuid,
+                        "Missing use permission for channel=" + channel.id() + " perm=" + channel.usePermission());
             }
             transmitChannelByPlayer.remove(uuid);
             return;
@@ -1923,20 +2072,24 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             return;
         }
 
-        debugLog("sound:" + path, "playFeedbackSound called; configured='" + soundName + "' volume=" + volume + " pitch=" + pitch);
+        debugLog("sound:" + path,
+                "playFeedbackSound called; configured='" + soundName + "' volume=" + volume + " pitch=" + pitch);
         Sound sound = resolveSound(soundName);
         if (sound != null) {
             debugLog("sound:" + path, "Resolved enum Sound=" + String.valueOf(sound));
             player.playSound(player.getLocation(), sound, volume, pitch);
             return;
         }
-        debugLog("sound:" + path, "Did not resolve enum Sound for='" + soundName + "', attempting resource-pack key fallback");
+        debugLog("sound:" + path,
+                "Did not resolve enum Sound for='" + soundName + "', attempting resource-pack key fallback");
 
-        // Fallback: allow custom resource-pack sound events (e.g. ItemsAdder: "radio:tx_start").
+        // Fallback: allow custom resource-pack sound events (e.g. ItemsAdder:
+        // "radio:tx_start").
         try {
             player.playSound(player.getLocation(), soundName, volume, pitch);
         } catch (Throwable t) {
-            debugLog("sound:" + path, "Invalid sound in config: " + path + ".sound='" + soundName + "' (" + t.getClass().getSimpleName() + ": " + t.getMessage() + ")");
+            debugLog("sound:" + path, "Invalid sound in config: " + path + ".sound='" + soundName + "' ("
+                    + t.getClass().getSimpleName() + ": " + t.getMessage() + ")");
         }
     }
 
@@ -1981,13 +2134,15 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         // Prevent overlap if we retrigger quickly.
         stopFilterLongSound(player);
 
-        debugLog("sound:" + basePath, "playFilterLongSound called; configured='" + soundName + "' volume=" + volume + " pitch=" + pitch);
+        debugLog("sound:" + basePath,
+                "playFilterLongSound called; configured='" + soundName + "' volume=" + volume + " pitch=" + pitch);
 
         try {
             // Plays a custom resource-pack sound event by key (e.g. "radio:filter_long").
             player.playSound(player.getLocation(), soundName, volume, pitch);
         } catch (Throwable t) {
-            debugLog("sound:" + basePath, "Failed to play custom sound '" + soundName + "': " + t.getClass().getSimpleName() + ": " + t.getMessage());
+            debugLog("sound:" + basePath, "Failed to play custom sound '" + soundName + "': "
+                    + t.getClass().getSimpleName() + ": " + t.getMessage());
         }
     }
 
@@ -2051,7 +2206,8 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             // Unexpected reflection issue
         }
 
-        // 2) Accept registry keys: "minecraft:block.note_block.pling" or "block.note_block.pling"
+        // 2) Accept registry keys: "minecraft:block.note_block.pling" or
+        // "block.note_block.pling"
         String keyString = raw.trim();
         if (!keyString.contains(":")) {
             // Vanilla sound keys are typically dot-separated without namespace
@@ -2147,8 +2303,10 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             return;
         }
 
-        // Only notify if the player is actively holding the relevant radio in main hand.
-        // This prevents spurious "no listen/no transmit" messages on unrelated hotbar changes.
+        // Only notify if the player is actively holding the relevant radio in main
+        // hand.
+        // This prevents spurious "no listen/no transmit" messages on unrelated hotbar
+        // changes.
         try {
             if (itemUtil != null) {
                 RadioChannel held = itemUtil.getChannel(player.getInventory().getItemInMainHand());
@@ -2201,16 +2359,19 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
             return;
         }
 
-        // If Simple Voice Chat isn't installed, we must not load classes that depend on its API.
+        // If Simple Voice Chat isn't installed, we must not load classes that depend on
+        // its API.
         try {
             Class.forName("de.maxhenkel.voicechat.api.VoicechatPlugin", false, getClassLoader());
         } catch (ClassNotFoundException e) {
-            getLogger().warning("Simple Voice Chat API not found. Install the 'voicechat' plugin to enable voice features.");
+            getLogger().warning(
+                    "Simple Voice Chat API not found. Install the 'voicechat' plugin to enable voice features.");
             return;
         }
 
         try {
-            Class<?> bridgeClass = Class.forName("me.Luki.WalkieTalkiePlugin.voice.VoicechatBridge", true, getClassLoader());
+            Class<?> bridgeClass = Class.forName("me.Luki.WalkieTalkiePlugin.voice.VoicechatBridge", true,
+                    getClassLoader());
             bridgeClass.getMethod("tryRegister", WalkieTalkiePlugin.class).invoke(null, this);
         } catch (Throwable t) {
             getLogger().severe("Failed to hook Simple Voice Chat. Voice features disabled.");
