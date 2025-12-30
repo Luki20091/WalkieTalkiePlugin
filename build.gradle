@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'me.Luki'
-version = '1.1-Alpha'
+version = '1.2-Alpha'
 
 repositories {
     mavenCentral()
