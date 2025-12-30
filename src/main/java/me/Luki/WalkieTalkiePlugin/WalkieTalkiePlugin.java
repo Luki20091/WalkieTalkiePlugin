@@ -180,6 +180,12 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     private final Map<UUID, RadioChannel> transmitChannelByPlayer = new ConcurrentHashMap<>();
     private final Map<UUID, RadioChannel> preferredListenChannelByPlayer = new ConcurrentHashMap<>();
 
+    // Flag: whether a player currently has a Backpack-like GUI open that should block
+    // moving/picking radio items. External plugins (e.g. BackpackPlus) should call
+    // `markPlayerBackpackGuiOpen(player, true)` when opening such a GUI and
+    // `markPlayerBackpackGuiOpen(player, false)` when closing it.
+    private final Map<UUID, Boolean> backpackGuiOpen = new ConcurrentHashMap<>();
+
     private final Map<UUID, PermissionSnapshot> permissionSnapshots = new ConcurrentHashMap<>();
 
     private static final class BusyLine {
@@ -1329,6 +1335,14 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         }
 
         boolean anyChanged = false;
+        if (hotbarDetailedLoggingEnabled()) {
+            try {
+                var top = player.getOpenInventory();
+                var topType = top == null || top.getTopInventory() == null ? "<null>" : String.valueOf(top.getTopInventory().getType());
+                getLogger().info("[WT-DEBUG] applyHotbarVisuals for " + player.getName() + " tx=" + (txChannel == null ? "<none>" : txChannel.id()) + " txActive=" + txActive + " heldSlot=" + heldSlot + " listenSlot=" + listenSlot + " top=" + topType + " eavesdrop=" + eavesdropping);
+            } catch (Throwable ignored) {}
+        }
+
         for (int slot = 0; slot < 9; slot++) {
             ItemStack stack = player.getInventory().getItem(slot);
             RadioChannel itemChannel = itemUtil.getChannel(stack);
@@ -1350,6 +1364,20 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
             ItemStack updated = applyRadioVisualStage(stack, itemChannel, desired);
             if (updated != null) {
+                if (hotbarDetailedLoggingEnabled()) {
+                    try {
+                        String curId = "<none>";
+                        String newId = "<none>";
+                        if (itemsAdder != null && itemsAdder.isAvailable()) {
+                            curId = stack == null ? "<null>" : String.valueOf(itemsAdder.getCustomId(stack)) + "@" + (stack == null ? 0 : stack.getAmount());
+                            newId = String.valueOf(itemsAdder.getCustomId(updated)) + "@" + (updated == null ? 0 : updated.getAmount());
+                        } else {
+                            curId = stack == null ? "<null>" : String.valueOf(stack.getType()) + "@" + stack.getAmount();
+                            newId = updated == null ? "<null>" : String.valueOf(updated.getType()) + "@" + updated.getAmount();
+                        }
+                        getLogger().info("[WT-DEBUG] Hotbar slot=" + slot + " cur=" + curId + " -> new=" + newId + " desiredStage=" + desired.name());
+                    } catch (Throwable ignored) {}
+                }
                 // Even if the instance is the same (meta mutation), set it back to ensure
                 // Bukkit/clients refresh the slot reliably.
                 player.getInventory().setItem(slot, updated);
@@ -1362,6 +1390,9 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         if (anyChanged) {
             try {
                 player.updateInventory();
+                if (hotbarDetailedLoggingEnabled()) {
+                    getLogger().info("[WT-DEBUG] applyHotbarVisuals applied changes for " + player.getName());
+                }
             } catch (Throwable ignored) {
                 // best-effort
             }
@@ -1674,6 +1705,32 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     }
 
     /**
+     * Config: whether radios may only be stored in a player's own inventory.
+     * If true, attempts to place radios into non-player inventories will be blocked.
+     */
+    public boolean radiosOnlyInPlayerInventory() {
+        try {
+            return getConfig().getBoolean("radios.onlyInPlayerInventory", true);
+        } catch (Throwable ignored) {
+            return true;
+        }
+    }
+
+    /**
+     * Send a configurable notification to the player when an action is blocked
+     * due to the radios-only-in-player-inventory rule.
+     */
+    public void notifyRadiosOnlyInPlayerInventory(Player player) {
+        if (player == null) return;
+        String raw = getConfig().getString("notifications.radiosOnlyInPlayerInventory.actionBar", "&cRadios may only be stored in your inventory.");
+        try {
+            player.sendActionBar(legacy.deserialize(translateLegacyColors(raw)));
+        } catch (Throwable ignored) {
+            // best-effort
+        }
+    }
+
+    /**
      * Best-effort safety: ensure that radios stored outside the main hand are never left in the ON stage.
      * This prevents "stealing" an active radio from inventories/chests.
      */
@@ -1747,6 +1804,27 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
     public RadioItemUtil getItemUtil() {
         return itemUtil;
+    }
+
+    /**
+     * Mark that the given player has opened/closed a Backpack-like GUI.
+     * Call with `open=true` when the custom GUI is shown and `false` when it closes.
+     * When set, listeners will block moving/picking radio items to avoid duplication.
+     */
+    public void markPlayerBackpackGuiOpen(Player player, boolean open) {
+        if (player == null) return;
+        UUID uuid = player.getUniqueId();
+        if (open) {
+            backpackGuiOpen.put(uuid, true);
+            if (isDevMode()) getLogger().info("[WT-DEBUG] Marked player " + player.getName() + " as in Backpack GUI");
+        } else {
+            backpackGuiOpen.remove(uuid);
+            if (isDevMode()) getLogger().info("[WT-DEBUG] Unmarked player " + player.getName() + " from Backpack GUI");
+        }
+    }
+
+    public boolean isPlayerInBackpackGui(UUID uuid) {
+        return uuid != null && Boolean.TRUE.equals(backpackGuiOpen.get(uuid));
     }
 
     // syncDamageToAllVariants removed: do not copy damage across inventory variants.
@@ -2137,6 +2215,14 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         } catch (Throwable t) {
             getLogger().severe("Failed to hook Simple Voice Chat. Voice features disabled.");
             t.printStackTrace();
+        }
+    }
+
+    public boolean hotbarDetailedLoggingEnabled() {
+        try {
+            return getConfig().getBoolean("debug.hotbarDetailedLogging", false) || isDevMode();
+        } catch (Throwable ignored) {
+            return isDevMode();
         }
     }
 }

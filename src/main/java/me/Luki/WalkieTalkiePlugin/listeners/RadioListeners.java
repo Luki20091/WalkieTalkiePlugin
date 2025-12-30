@@ -172,6 +172,60 @@ public final class RadioListeners implements Listener {
             return;
         }
 
+        // If this player is interacting with a Backpack-like GUI, block any
+        // attempts to move or pick up radio items in the player inventory.
+        try {
+            UUID puid = player.getUniqueId();
+            if (plugin.isPlayerInBackpackGui(puid)) {
+                try {
+                    var current = event.getCurrentItem();
+                    var cursor = event.getCursor();
+                    if (itemUtil.isRadio(current) || itemUtil.isRadio(cursor)) {
+                        event.setCancelled(true);
+                        if (plugin.isDevMode()) plugin.getLogger().info("[WT-DEBUG] Blocked radio inventory click for " + player.getName() + " while backpack GUI open");
+                        return;
+                    }
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+
+        // Global rule: if config enforces radios-only-in-player-inventory, block
+        // attempts to place radios into any non-player top inventory. Allow taking
+        // radios out of those inventories (i.e., extraction is permitted).
+        try {
+            if (plugin.radiosOnlyInPlayerInventory()) {
+                var view = player.getOpenInventory();
+                var top = view == null ? null : view.getTopInventory();
+                var clicked = event.getClickedInventory();
+                if (top != null && clicked == top && top.getType() != org.bukkit.event.inventory.InventoryType.PLAYER) {
+                    // Player is clicking inside a top (non-player) inventory. Block placing via cursor.
+                    try {
+                        var cursor = event.getCursor();
+                        if (itemUtil.isRadio(cursor)) {
+                            event.setCancelled(true);
+                            plugin.notifyRadiosOnlyInPlayerInventory(player);
+                            if (plugin.isDevMode()) plugin.getLogger().info("[WT-DEBUG] Blocked placing radio into top inventory for " + player.getName());
+                            return;
+                        }
+                    } catch (Throwable ignored) {}
+                }
+
+                // Shift-click / move-to-other-inventory: block moves of radios into other inventories
+                try {
+                    if (event.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
+                        var cur = event.getCurrentItem();
+                        if (itemUtil.isRadio(cur)) {
+                            // If the other inventory would be a non-player inventory, block it.
+                            event.setCancelled(true);
+                            plugin.notifyRadiosOnlyInPlayerInventory(player);
+                            if (plugin.isDevMode()) plugin.getLogger().info("[WT-DEBUG] Blocked shift-move of radio for " + player.getName());
+                            return;
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+
         // Immediate normalization: never allow an ON-stage radio to be moved around inventories.
         // (Main-hand visual ON is handled by the UI task; when you click/move items, we force OFF.)
         try {
@@ -249,6 +303,43 @@ public final class RadioListeners implements Listener {
             return;
         }
 
+        // If interacting while a Backpack GUI is marked open, block creative manip of radios
+        try {
+            UUID puid = player.getUniqueId();
+            if (plugin.isPlayerInBackpackGui(puid)) {
+                try {
+                    var current = event.getCurrentItem();
+                    var cursor = event.getCursor();
+                    if (itemUtil.isRadio(current) || itemUtil.isRadio(cursor)) {
+                        event.setCancelled(true);
+                        if (plugin.isDevMode()) plugin.getLogger().info("[WT-DEBUG] Blocked radio creative action for " + player.getName() + " while backpack GUI open");
+                        return;
+                    }
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+
+        // Enforce global radios-only-in-player-inventory rule for creative inventory too.
+        try {
+            if (plugin.radiosOnlyInPlayerInventory()) {
+                var view = player.getOpenInventory();
+                var top = view == null ? null : view.getTopInventory();
+                var clicked = event.getClickedInventory();
+                if (top != null && clicked == top && top.getType() != org.bukkit.event.inventory.InventoryType.PLAYER) {
+                    try {
+                        var current = event.getCurrentItem();
+                        var cursor = event.getCursor();
+                        if (itemUtil.isRadio(current) || itemUtil.isRadio(cursor)) {
+                            event.setCancelled(true);
+                            plugin.notifyRadiosOnlyInPlayerInventory(player);
+                            if (plugin.isDevMode()) plugin.getLogger().info("[WT-DEBUG] Blocked radio creative action due to config for " + player.getName());
+                            return;
+                        }
+                    } catch (Throwable ignored) {}
+                }
+            }
+        } catch (Throwable ignored) {}
+
         // Creative can create/clone items; ensure any radio involved is OFF.
         try {
             var current = event.getCurrentItem();
@@ -283,6 +374,27 @@ public final class RadioListeners implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
+
+        // Block drag of radio items while backpack GUI is open, or if config forbids placing radios
+        try {
+            UUID puid = player.getUniqueId();
+            boolean backpack = plugin.isPlayerInBackpackGui(puid);
+            var view = player.getOpenInventory();
+            var top = view == null ? null : view.getTopInventory();
+            boolean configBlock = plugin.radiosOnlyInPlayerInventory() && top != null && top.getType() != org.bukkit.event.inventory.InventoryType.PLAYER;
+            if (backpack || configBlock) {
+                try {
+                    var newItems = event.getNewItems();
+                    for (var it : newItems.values()) {
+                        if (itemUtil.isRadio(it)) {
+                            event.setCancelled(true);
+                            if (plugin.isDevMode()) plugin.getLogger().info("[WT-DEBUG] Blocked radio drag for " + player.getName() + " (backpack=" + backpack + " configBlock=" + configBlock + ")");
+                            return;
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
 
         // Immediate normalization isn't reliable for drag events; normalize next tick.
 
@@ -321,6 +433,14 @@ public final class RadioListeners implements Listener {
                 if (normalized != null) {
                     event.setItem(normalized);
                 }
+                // Enforce config: do not allow automation to insert radios into non-player inventories
+                try {
+                    var dest = event.getDestination();
+                    if (plugin.radiosOnlyInPlayerInventory() && dest != null && dest.getType() != org.bukkit.event.inventory.InventoryType.PLAYER) {
+                        event.setCancelled(true);
+                        if (plugin.isDevMode()) plugin.getLogger().info("[WT-DEBUG] Blocked automated transfer of radio into non-player inventory");
+                    }
+                } catch (Throwable ignored) {}
             }
         } catch (Throwable ignored) {
             // best-effort
@@ -420,6 +540,20 @@ public final class RadioListeners implements Listener {
             if (itemEntity == null) {
                 return;
             }
+            // If the player currently has a Backpack GUI open, block picking up radios.
+            try {
+                UUID puid = player.getUniqueId();
+                if (plugin.isPlayerInBackpackGui(puid)) {
+                    try {
+                        var pickupStack = itemEntity.getItemStack();
+                        if (itemUtil.isRadio(pickupStack)) {
+                            event.setCancelled(true);
+                            if (plugin.isDevMode()) plugin.getLogger().info("[WT-DEBUG] Blocked pickup of radio for " + player.getName() + " while backpack GUI open");
+                            return;
+                        }
+                    } catch (Throwable ignored) {}
+                }
+            } catch (Throwable ignored) {}
             var stack = itemEntity.getItemStack();
             var normalized = plugin.normalizeTalkingVariantToBase(stack);
             if (normalized != null) {

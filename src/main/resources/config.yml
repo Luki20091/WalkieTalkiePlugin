@@ -2,7 +2,7 @@
 # Minecraft: 1.21.8
 
 # Developer mode (enables extra debug logging)
-dev: false
+dev: true
 
 # Nadawanie radiem: trzymaj radio w main hand + użyj PTT w Simple Voice Chat.
 
@@ -48,6 +48,7 @@ radios:
   piraci: "radio:radio_piraci"
   streamcraft: "radio:radio_streamcraft"
   piraci_random: "radio:radio_piraci_random"
+  onlyInPlayerInventory: true
 
 # Feedback sounds
 sounds:
@@ -205,6 +206,9 @@ notifications:
     stop:
       enabled: true
       actionBar: "&5Koniec podsłuchu"
+  radiosOnlyInPlayerInventory:
+    enabled: true
+    actionBar: "&cRadia można trzymać tylko w ekwipunku gracza."
 
 # Hint: pokazuje nadającemu, że musi wcisnąć PTT w Simple Voice Chat
 hints:
@@ -220,5 +224,8 @@ hints:
 
 # Debugger / diagnostyka
 debug:
-  enabled: false
+  enabled: true
   logIntervalMs: 10000
+  # Hotbar / inventory debug: enable extra, per-slot hotbar logs (for reproducing dupes)
+  hotbarDetailedLogging: true
+

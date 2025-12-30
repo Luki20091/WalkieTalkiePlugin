@@ -8,241 +8,292 @@ items:
     display_name: "&fRadio: &cCzerwonych"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_czerwoni_0
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
   radio_czerwoni_1:
     display_name: "&fRadio: &cCzerwonych"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_czerwoni_1
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
   radio_czerwoni_2:
     display_name: "&fRadio: &cCzerwonych"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_czerwoni_2
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
 
   radio_niebiescy_0:
     display_name: "&fRadio: &bNiebieskich"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_niebiescy_0
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
   radio_niebiescy_1:
     display_name: "&fRadio: &bNiebieskich"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_niebiescy_1
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
   radio_niebiescy_2:
     display_name: "&fRadio: &bNiebieskich"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_niebiescy_2
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
 
   radio_handlarze_0:
     display_name: "&fRadio: &eHandlarzy"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_handlarze_0
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
   radio_handlarze_1:
     display_name: "&fRadio: &eHandlarzy"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_handlarze_1
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
   radio_handlarze_2:
     display_name: "&fRadio: &eHandlarzy"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_handlarze_2
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
 
   radio_piraci_0:
     display_name: "&fRadio: &aPiratów"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_piraci_0
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
   radio_piraci_1:
     display_name: "&fRadio: &aPiratów"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_piraci_1
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
   radio_piraci_2:
     display_name: "&fRadio: &aPiratów"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_piraci_2
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
 
   radio_streamcraft_0:
-    display_name: "&fRadio: &dDo Handlarzy"
+    display_name: "&fRadio: &dStreamCraft"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_streamcraft_0
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
   radio_streamcraft_1:
-    display_name: "&fRadio: &dDo Handlarzy"
+    display_name: "&fRadio: &dStreamCraft"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_streamcraft_1
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
   radio_streamcraft_2:
-    display_name: "&fRadio: &dDo Handlarzy"
+    display_name: "&fRadio: &dStreamCraft"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby nadawać.'
+      - '&7Trzymaj na hotbarze, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_streamcraft_2
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
 
   radio_piraci_random_0:
     display_name: "&fStare Radio: Piratów"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_piraci_random_0
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
   radio_piraci_random_1:
     display_name: "&fStare Radio: Piratów"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_piraci_random_1
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
   radio_piraci_random_2:
     display_name: "&fStare Radio: Piratów"
     category: "radios"
     lore:
-      - '&7Trzymaj w głównej ręce.'
+      - '&7Trzymaj w głównej ręce, aby słuchać.'
     resource:
       material: SHEARS
       generate: false
       model_path: item/radio_piraci_random_2
     stack_size: 1
     durability:
-      max_durability: 200
-      durablity: 200
+      max_durability: 100
+      durability: 100
+      disappear_when_broken: true
+      unbreakable: false
 
 recipes:
   crafting_table:
