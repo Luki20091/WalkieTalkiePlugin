@@ -146,6 +146,62 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
     }
 
     /**
+     * Decrements durability of a radio at a specific inventory slot.
+     * Used when switching slots to consume durability from the previously held
+     * radio.
+     */
+    public void decrementRadioDurabilityAtSlot(Player player, int slot) {
+        if (player == null || itemUtil == null)
+            return;
+        ItemStack stack = player.getInventory().getItem(slot);
+        if (stack == null || !itemUtil.isRadio(stack)) {
+            if (isDevMode())
+                getLogger().info("[WT-DEBUG] decrementRadioDurabilityAtSlot slot=" + slot + " not a radio.");
+            return;
+        }
+        ItemMeta meta = stack.getItemMeta();
+        if (meta == null || !(meta instanceof org.bukkit.inventory.meta.Damageable)) {
+            return;
+        }
+        org.bukkit.inventory.meta.Damageable damageable = (org.bukkit.inventory.meta.Damageable) meta;
+        int current = damageable.getDamage();
+        int max = stack.getType().getMaxDurability();
+        try {
+            if (itemsAdder != null && itemsAdder.isAvailable()) {
+                String iaId = itemsAdder.getCustomId(stack);
+                int iaMax = itemsAdder.getMaxDurabilityForId(iaId);
+                if (iaMax > 0) {
+                    max = iaMax;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        int newDamage = current + 1;
+        if (current < max) {
+            damageable.setDamage(newDamage);
+            stack.setItemMeta(meta);
+            player.getInventory().setItem(slot, stack);
+            if (isDevMode())
+                getLogger().info("[WT-DEBUG] Durability decremented at slot=" + slot + " (new=" + newDamage + ")");
+
+            if (newDamage >= max) {
+                player.getInventory().setItem(slot, new org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR));
+                try {
+                    player.getWorld().playSound(player.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0f, 1.0f);
+                } catch (Throwable ignored) {
+                }
+            }
+        } else {
+            player.getInventory().setItem(slot, new org.bukkit.inventory.ItemStack(org.bukkit.Material.AIR));
+            try {
+                player.getWorld().playSound(player.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0f, 1.0f);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    /**
      * Synchronizes durability between radio item variants (_0/_1/_2).
      * Should be called when swapping item variant to keep durability visually
      * correct.
@@ -1674,6 +1730,9 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
 
         UUID uuid = player.getUniqueId();
 
+        // Check if was actively transmitting before clearing
+        boolean wasActive = Boolean.TRUE.equals(transmitUiActive.get(uuid));
+
         // Cancel any pending silence timeout.
         BukkitTask task = transmitClearTaskByPlayer.remove(uuid);
         if (task != null) {
@@ -1689,6 +1748,15 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         lastMicPacketAtMs.remove(uuid);
 
         stopFilterLongSound(player);
+
+        // Play stop sound and notification if was actively transmitting
+        if (wasActive) {
+            playTransmitStopSound(player);
+            playConfiguredNotification(player, "notifications.transmit.stop");
+
+            // Clear the transmit channel cache
+            transmitChannelByPlayer.remove(uuid);
+        }
 
         // Apply OFF stage immediately.
         applyHotbarVisuals(player, transmitChannelByPlayer.get(uuid), false, System.currentTimeMillis());

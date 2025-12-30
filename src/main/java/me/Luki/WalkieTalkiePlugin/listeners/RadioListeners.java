@@ -897,13 +897,30 @@ public final class RadioListeners implements Listener {
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onItemHeld(PlayerItemHeldEvent event) {
         Player player = event.getPlayer();
+        int previousSlot = event.getPreviousSlot();
+        UUID uuid = player.getUniqueId();
+
+        // Check if transmission was active BEFORE runNextTick, since forceStop will
+        // clear it
+        boolean wasTransmitting = plugin.isTransmitUiActive(uuid);
+
         plugin.runNextTick(() -> {
             try {
                 if (plugin.isDevMode() || plugin.getConfig().getBoolean("debug.enabled", false))
                     plugin.getLogger().info("[WT-DEBUG] ItemHeld event for " + player.getName() + " from="
-                            + event.getPreviousSlot() + " to=" + event.getNewSlot());
+                            + previousSlot + " to=" + event.getNewSlot() + " wasTransmitting=" + wasTransmitting);
             } catch (Throwable ignored) {
             }
+
+            // If player was transmitting, force stop and consume durability from previous
+            // slot
+            if (wasTransmitting) {
+                plugin.decrementRadioDurabilityAtSlot(player, previousSlot);
+                plugin.forceStopAllRadioModes(player);
+                if (plugin.isDevMode())
+                    plugin.getLogger().info("[WT-DEBUG] Forced stop due to slot switch from=" + previousSlot);
+            }
+
             plugin.getRadioState().refreshHotbar(player);
             plugin.refreshTransmitCache(player);
             plugin.refreshPermissionCache(player);
@@ -915,7 +932,6 @@ public final class RadioListeners implements Listener {
 
             // Play a single click sound when switching to a radio / between radio channels.
             RadioChannel nowInHand = itemUtil.getChannel(player.getInventory().getItemInMainHand());
-            UUID uuid = player.getUniqueId();
             RadioChannel previously = lastHeldRadioChannel.get(uuid);
             if (nowInHand != previously) {
                 if (nowInHand != null) {
