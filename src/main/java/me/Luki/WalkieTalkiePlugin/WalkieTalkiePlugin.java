@@ -39,6 +39,22 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
      * regardless of listeners.
      * Use this after transmit ends to ensure durability is reduced.
      */
+    private Integer scanInventoryForChannel(Player player, RadioChannel expected) {
+        if (player == null || expected == null || itemUtil == null) {
+            return null;
+        }
+        for (int i = 0; i < player.getInventory().getSize(); i++) {
+            ItemStack item = player.getInventory().getItem(i);
+            if (itemUtil.isRadio(item)) {
+                RadioChannel ch = itemUtil.getChannel(item);
+                if (expected.equals(ch)) {
+                    return i;
+                }
+            }
+        }
+        return null;
+    }
+
     public void decrementRadioDurability(Player player) {
         if (player == null || itemUtil == null)
             return;
@@ -1208,14 +1224,39 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
                         if (prev != null) {
                             // clear cached transmit channel and decrement durability once for this transmit
                             transmitChannelByPlayer.remove(playerUuid);
+
+                            // Fix for race condition: use stored transmit slot instead of blindly trusting
+                            // Main Hand
+                            Integer slot = radioState != null ? radioState.getTransmitSlot(playerUuid) : null;
+
+                            // Fallback: If slot is null/stale, scan inventory for the matching channel
+                            if (player != null && (slot == null || slot < 0
+                                    || !itemUtil.isRadio(player.getInventory().getItem(slot)))) {
+                                if (isDevMode()) {
+                                    getLogger().info("[WT-DEBUG] transmitClearTask slot " + slot
+                                            + " invalid/empty, scanning inventory for channel " + prev.id());
+                                }
+                                Integer foundSlot = scanInventoryForChannel(player, prev);
+                                if (foundSlot != null) {
+                                    slot = foundSlot;
+                                }
+                            }
+
                             if (isDevMode() && player != null) {
-                                ItemStack s = player.getInventory().getItemInMainHand();
+                                ItemStack s = (slot != null && slot >= 0) ? player.getInventory().getItem(slot)
+                                        : player.getInventory().getItemInMainHand();
                                 String ia = itemUtil != null ? itemUtil.debugGetItemsAdderId(s) : "<no-ia>";
                                 getLogger().info(
-                                        "[WT-DEBUG] transmitClearTask about to decrement radio for " + player.getName()
-                                                + " ia=" + ia + " type=" + (s == null ? "<null>" : s.getType()));
+                                        "[WT-DEBUG] transmitClearTask decrement for " + player.getName()
+                                                + " slot=" + (slot == null ? "HAND" : slot) + " ia=" + ia + " type="
+                                                + (s == null ? "<null>" : s.getType()));
                             }
-                            decrementRadioDurability(player);
+
+                            if (slot != null && slot >= 0) {
+                                decrementRadioDurabilityAtSlot(player, slot);
+                            } else {
+                                decrementRadioDurability(player);
+                            }
                         }
                     } catch (Throwable ignored) {
                     }
@@ -1819,6 +1860,7 @@ public final class WalkieTalkiePlugin extends JavaPlugin {
         }
 
         setHoldToTalkActive(uuid, false);
+        clearTransmitCache(uuid);
 
         // These also ensure visuals can't get stuck.
         forceStopTransmitVisuals(player);

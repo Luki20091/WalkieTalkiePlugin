@@ -185,6 +185,9 @@ public final class RadioListeners implements Listener {
         // Swapping hands (default key: F) does not fire hotbar change events, so we
         // must refresh caches here.
         Player player = event.getPlayer();
+        // Fix for phantom transmit: immediately invalidate transmit cache
+        plugin.clearTransmitCache(player.getUniqueId());
+
         plugin.runNextTick(() -> {
             plugin.normalizeRadiosForStorage(player);
             plugin.getRadioState().refreshHotbar(player);
@@ -221,6 +224,9 @@ public final class RadioListeners implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
+
+        // Fix for phantom transmit: immediately invalidate transmit cache
+        plugin.clearTransmitCache(player.getUniqueId());
 
         if (plugin.isDevMode()) {
             plugin.getLogger()
@@ -479,11 +485,14 @@ public final class RadioListeners implements Listener {
         });
     }
 
-    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onInventoryCreative(InventoryCreativeEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
+
+        // Fix for phantom transmit: immediately invalidate transmit cache
+        plugin.clearTransmitCache(player.getUniqueId());
 
         if (plugin.isDevMode()) {
             plugin.getLogger().info("[WT-TRACE] Creative: type=" + event.getInventory().getType() + " viewTop="
@@ -745,6 +754,8 @@ public final class RadioListeners implements Listener {
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
     public void onDrop(PlayerDropItemEvent event) {
         Player player = event.getPlayer();
+        // Fix for phantom transmit: immediate invalidation
+        plugin.clearTransmitCache(player.getUniqueId());
 
         // Q-drop should immediately end transmit/listen/eavesdrop to avoid stuck
         // looping sounds.
@@ -899,6 +910,8 @@ public final class RadioListeners implements Listener {
         Player player = event.getPlayer();
         int previousSlot = event.getPreviousSlot();
         UUID uuid = player.getUniqueId();
+        // Fix for phantom transmit: immediate invalidation
+        plugin.clearTransmitCache(uuid);
 
         // Check if transmission was active BEFORE runNextTick, since forceStop will
         // clear it

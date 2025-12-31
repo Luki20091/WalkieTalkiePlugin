@@ -1,0 +1,25 @@
+
+> Task :compileJava FAILED
+C:\Users\lukas\IdeaProjects\WalkieTalkiePlugin\src\main\java\me\Luki\WalkieTalkiePlugin\WalkieTalkiePlugin.java:1816: error: 'catch' without 'try'
+        } catch (Throwable ignored) {
+          ^
+C:\Users\lukas\IdeaProjects\WalkieTalkiePlugin\src\main\java\me\Luki\WalkieTalkiePlugin\WalkieTalkiePlugin.java:1812: error: 'try' without 'catch', 'finally' or resource declarations
+        try {
+        ^
+C:\Users\lukas\IdeaProjects\WalkieTalkiePlugin\src\main\java\me\Luki\WalkieTalkiePlugin\WalkieTalkiePlugin.java:1837: error: illegal start of expression
+    public void normalizeTalkingVariantInMainHand(Player player, boolean force) {
+    ^
+3 errors
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> Compilation failed; see the compiler error output for details.
+
+* Try:
+> Run with --info option to get more log output.
+> Run with --scan to get full insights.
+
+BUILD FAILED in 789ms
+1 actionable task: 1 executed

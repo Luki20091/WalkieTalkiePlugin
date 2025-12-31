@@ -16,6 +16,7 @@ public final class RadioState {
     private final RadioItemUtil itemUtil;
 
     private final Map<UUID, RadioChannel> transmitting = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> transmitSlot = new ConcurrentHashMap<>();
     private final Map<UUID, RadioChannel> eavesdropping = new ConcurrentHashMap<>();
     private final Map<UUID, Set<RadioChannel>> hotbarCache = new ConcurrentHashMap<>();
 
@@ -26,9 +27,19 @@ public final class RadioState {
     public void setTransmitting(UUID playerUuid, RadioChannel channel) {
         if (channel == null) {
             transmitting.remove(playerUuid);
+            // We KEEP the transmitSlot so that asynchronous tasks (transmitClearTask)
+            // can still know where the radio *was* when transmission started.
         } else {
             transmitting.put(playerUuid, channel);
         }
+    }
+
+    public void setTransmitSlot(UUID playerUuid, int slot) {
+        transmitSlot.put(playerUuid, slot);
+    }
+
+    public Integer getTransmitSlot(UUID playerUuid) {
+        return transmitSlot.get(playerUuid);
     }
 
     public RadioChannel getTransmittingChannel(UUID playerUuid) {
@@ -37,6 +48,7 @@ public final class RadioState {
 
     public void clear(UUID playerUuid) {
         transmitting.remove(playerUuid);
+        transmitSlot.remove(playerUuid);
         eavesdropping.remove(playerUuid);
         hotbarCache.remove(playerUuid);
     }
@@ -49,23 +61,25 @@ public final class RadioState {
 
         // Start durability reduction task for pirate radio
         Player player = org.bukkit.Bukkit.getPlayer(playerUuid);
-        if (player != null && itemUtil.getChannel(player.getInventory().getItemInMainHand()) == RadioChannel.PIRACI_RANDOM) {
+        if (player != null
+                && itemUtil.getChannel(player.getInventory().getItemInMainHand()) == RadioChannel.PIRACI_RANDOM) {
             // Cancel previous task if exists
             stopPirateEavesdropTask(playerUuid);
             int taskId = org.bukkit.Bukkit.getScheduler().scheduleSyncRepeatingTask(
-                org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(RadioState.class),
-                () -> {
-                    if (itemUtil.getChannel(player.getInventory().getItemInMainHand()) == RadioChannel.PIRACI_RANDOM && eavesdropping.containsKey(playerUuid)) {
-                        // Reduce durability by 1 every 5 seconds
-                        me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
-                        plugin.decrementRadioDurability(player);
-                    } else {
-                        stopPirateEavesdropTask(playerUuid);
-                    }
-                },
-                100L, // 5 seconds (20 ticks * 5)
-                100L
-            );
+                    org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(RadioState.class),
+                    () -> {
+                        if (itemUtil.getChannel(player.getInventory().getItemInMainHand()) == RadioChannel.PIRACI_RANDOM
+                                && eavesdropping.containsKey(playerUuid)) {
+                            // Reduce durability by 1 every 5 seconds
+                            me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin
+                                    .getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
+                            plugin.decrementRadioDurability(player);
+                        } else {
+                            stopPirateEavesdropTask(playerUuid);
+                        }
+                    },
+                    100L, // 5 seconds (20 ticks * 5)
+                    100L);
             pirateEavesdropTaskIds.put(playerUuid, taskId);
         }
     }
@@ -103,9 +117,11 @@ public final class RadioState {
         // Store as an immutable set to avoid accidental mutation across threads.
         hotbarCache.put(player.getUniqueId(), Collections.unmodifiableSet(channels));
         try {
-            var plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
+            var plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin
+                    .getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
             if (plugin != null && plugin.isDevMode()) {
-                plugin.getLogger().info("[WT-DEBUG] refreshHotbar player=" + player.getName() + " channels=" + channels);
+                plugin.getLogger()
+                        .info("[WT-DEBUG] refreshHotbar player=" + player.getName() + " channels=" + channels);
             }
         } catch (Throwable ignored) {
         }
@@ -115,9 +131,11 @@ public final class RadioState {
         Set<RadioChannel> channels = hotbarCache.get(playerUuid);
         boolean res = channels != null && channels.contains(channel);
         try {
-            var plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
+            var plugin = (me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin) org.bukkit.plugin.java.JavaPlugin
+                    .getProvidingPlugin(me.Luki.WalkieTalkiePlugin.WalkieTalkiePlugin.class);
             if (plugin != null && plugin.isDevMode()) {
-                plugin.getLogger().info("[WT-DEBUG] hasHotbarRadio player=" + playerUuid + " channel=" + (channel == null ? "<null>" : channel.id()) + " result=" + res + " cache=" + channels);
+                plugin.getLogger().info("[WT-DEBUG] hasHotbarRadio player=" + playerUuid + " channel="
+                        + (channel == null ? "<null>" : channel.id()) + " result=" + res + " cache=" + channels);
             }
         } catch (Throwable ignored) {
         }

@@ -39,8 +39,7 @@ public final class RadioHoldToTalkProtocolLib {
                 // Press / use item
                 PacketType.Play.Client.USE_ITEM,
                 // Release use item (sent as a dig action)
-                PacketType.Play.Client.BLOCK_DIG
-        ) {
+                PacketType.Play.Client.BLOCK_DIG) {
             @Override
             public void onPacketReceiving(PacketEvent event) {
                 handle(event);
@@ -103,7 +102,8 @@ public final class RadioHoldToTalkProtocolLib {
             }
         }
 
-        // Pirate eavesdrop radio: do not transmit, only listen to a random channel while holding PPM
+        // Pirate eavesdrop radio: do not transmit, only listen to a random channel
+        // while holding PPM
         if (channel == RadioChannel.PIRACI_RANDOM) {
             if (plugin.getRadioState().getEavesdroppingChannel(player.getUniqueId()) != null) {
                 return;
@@ -122,8 +122,10 @@ public final class RadioHoldToTalkProtocolLib {
         // Nie odbieraj durability na starcie
 
         plugin.getRadioState().setTransmitting(player.getUniqueId(), channel);
+        plugin.getRadioState().setTransmitSlot(player.getUniqueId(), player.getInventory().getHeldItemSlot());
         plugin.setHoldToTalkActive(player.getUniqueId(), true);
-        // filterLong is LISTEN/eavesdrop-only; ensure it is not audible during transmit.
+        // filterLong is LISTEN/eavesdrop-only; ensure it is not audible during
+        // transmit.
         plugin.stopFilterLongSound(player);
         plugin.maybePlayFilterLoopPulseNow(player);
         plugin.playTransmitStartSound(player);
@@ -177,13 +179,38 @@ public final class RadioHoldToTalkProtocolLib {
             final boolean endedTransmitFinal = endedTransmit;
             final boolean endedEavesdropFinal = endedEavesdrop;
             if ((endedTransmitFinal || endedEavesdropFinal)) {
-                // Debug: log item state just before decrement
-                if (plugin.isDevMode()) {
-                    ItemStack s = player.getInventory().getItemInMainHand();
-                    String ia = plugin.getItemUtil() != null ? plugin.getItemUtil().debugGetItemsAdderId(s) : "<no-ia>";
-                    plugin.getLogger().info("[WT-DEBUG] onBlockDig about to decrement radio for " + player.getName() + " ia=" + ia + " type=" + (s == null ? "<null>" : s.getType()));
+                // Use saved slot for durability - prevents phantom transmit on moved radios
+                Integer savedSlot = plugin.getRadioState().getTransmitSlot(player.getUniqueId());
+                if (savedSlot != null) {
+                    ItemStack radioAtSlot = player.getInventory().getItem(savedSlot);
+                    // Debug: log item state just before decrement
+                    if (plugin.isDevMode()) {
+                        String ia = plugin.getItemUtil() != null
+                                ? plugin.getItemUtil().debugGetItemsAdderId(radioAtSlot)
+                                : "<no-ia>";
+                        plugin.getLogger()
+                                .info("[WT-DEBUG] onBlockDig about to decrement radio for " + player.getName()
+                                        + " savedSlot=" + savedSlot + " ia=" + ia + " type="
+                                        + (radioAtSlot == null ? "<null>" : radioAtSlot.getType()));
+                    }
+                    // Only apply durability if radio is still in the saved slot
+                    if (plugin.getItemUtil().isRadio(radioAtSlot)) {
+                        plugin.decrementRadioDurabilityAtSlot(player, savedSlot);
+                    } else if (plugin.isDevMode()) {
+                        plugin.getLogger().info(
+                                "[WT-DEBUG] Radio no longer in saved slot " + savedSlot + ", skipping durability");
+                    }
+                } else {
+                    // Fallback to current main hand (should not happen normally)
+                    if (plugin.isDevMode()) {
+                        ItemStack s = player.getInventory().getItemInMainHand();
+                        String ia = plugin.getItemUtil() != null ? plugin.getItemUtil().debugGetItemsAdderId(s)
+                                : "<no-ia>";
+                        plugin.getLogger().info("[WT-DEBUG] onBlockDig fallback to main hand for " + player.getName()
+                                + " ia=" + ia + " type=" + (s == null ? "<null>" : s.getType()));
+                    }
+                    plugin.decrementRadioDurability(player);
                 }
-                plugin.decrementRadioDurability(player);
             }
             plugin.runNextTick(() -> {
                 plugin.forceStopTransmitVisuals(player);
